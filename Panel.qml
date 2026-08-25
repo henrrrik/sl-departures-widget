@@ -13,7 +13,7 @@ import "Model.js" as Model
 //   middle click pick a stop           j/k, arrows  scroll the board
 Panel {
   id: root
-  moduleName: "sl.departures"
+  moduleName: "io.github.henrrrik.sl-departures"
 
   readonly property var config: Model.resolveConfig(settings)
   readonly property bool vertical: bar ? bar.vertical : false

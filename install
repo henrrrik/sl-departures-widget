@@ -6,7 +6,7 @@
 
 set -euo pipefail
 
-id=sl.departures
+id=io.github.henrrrik.sl-departures
 src=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 dest="$HOME/.config/omarchy/plugins/$id"
 

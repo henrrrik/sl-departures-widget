@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Search SL site ids for the sl.departures bar widget.
+# Search SL site ids for the io.github.henrrrik.sl-departures bar widget.
 #
 #   sl-sites slussen          # stops matching "slussen"
 #   sl-sites --refresh        # force a re-download of the stop list
@@ -17,7 +17,7 @@ die() { printf '%s\n' "$*" >&2; exit 1; }
 
 usage() {
   cat <<'EOF'
-Search SL site ids for the sl.departures bar widget.
+Search SL site ids for the io.github.henrrrik.sl-departures bar widget.
 
   sl-sites slussen          # stops matching "slussen"
   sl-sites --refresh        # force a re-download of the stop list

@@ -17,10 +17,10 @@ which needs no account and no API key.
 
 ```bash
 omarchy plugin add https://github.com/henrrrik/sl-departures-widget.git
-omarchy plugin enable sl.departures --section center
+omarchy plugin enable io.github.henrrrik.sl-departures --section center
 ```
 
-`omarchy plugin add` clones into `~/.config/omarchy/plugins/sl.departures/` —
+`omarchy plugin add` clones into `~/.config/omarchy/plugins/io.github.henrrrik.sl-departures/` —
 named after the manifest id, not the repository — so that is the id every
 `omarchy plugin` and `omarchy bar` command wants.
 
@@ -30,13 +30,13 @@ Or, from a local checkout:
 git clone https://github.com/henrrrik/sl-departures-widget.git
 cd sl-departures-widget
 ./install
-omarchy plugin enable sl.departures --section center
+omarchy plugin enable io.github.henrrrik.sl-departures --section center
 ```
 
 Later updates:
 
 ```bash
-omarchy plugin update sl.departures    # installed with `plugin add`
+omarchy plugin update io.github.henrrrik.sl-departures    # installed with `plugin add`
 git pull && ./install                  # installed from a checkout
 ```
 
@@ -46,10 +46,10 @@ picker writes the stop into `~/.config/omarchy/shell.json` for you.
 ### Uninstall
 
 ```bash
-omarchy plugin remove sl.departures
+omarchy plugin remove io.github.henrrrik.sl-departures
 ```
 
-This disables the widget and deletes `~/.config/omarchy/plugins/sl.departures/`.
+This disables the widget and deletes `~/.config/omarchy/plugins/io.github.henrrrik.sl-departures/`.
 The only other things the plugin ever creates are its own entry in
 `~/.config/omarchy/shell.json` (removed by the command above) and the stop-list
 cache at `~/.cache/omarchy/sl-sites.json`, which is safe to delete.
@@ -83,7 +83,7 @@ Settings live inline on the widget's entry in `~/.config/omarchy/shell.json`:
 
 ```json
 {
-  "id": "sl.departures",
+  "id": "io.github.henrrrik.sl-departures",
   "siteId": 9192,
   "siteName": "Slussen",
   "transport": "METRO",
@@ -165,7 +165,7 @@ right on a laptop in any timezone, and keeps ticking between fetches.
 ## Development
 
 The plugin is a plain directory of QML plus a manifest. `./install` mirrors the
-checkout into `~/.config/omarchy/plugins/sl.departures/` and reloads the shell;
+checkout into `~/.config/omarchy/plugins/io.github.henrrrik.sl-departures/` and reloads the shell;
 it copies everything but the repository's own scaffolding, so a new QML file is
 never left behind by a stale file list.
 

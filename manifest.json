@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "id": "sl.departures",
+  "id": "io.github.henrrrik.sl-departures",
   "name": "SL Departures",
   "version": "1.0.0",
   "author": "Henrik Sjökvist",
