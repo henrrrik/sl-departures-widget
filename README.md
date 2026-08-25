@@ -16,14 +16,28 @@ which needs no account and no API key.
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/<you>/sl-widget.git
+omarchy plugin add https://github.com/henrrrik/sl-departures-widget.git
 omarchy plugin enable sl.departures --section center
 ```
+
+`omarchy plugin add` clones into `~/.config/omarchy/plugins/sl.departures/` —
+named after the manifest id, not the repository — so that is the id every
+`omarchy plugin` and `omarchy bar` command wants.
 
 Or, from a local checkout:
 
 ```bash
+git clone https://github.com/henrrrik/sl-departures-widget.git
+cd sl-departures-widget
 ./install
+omarchy plugin enable sl.departures --section center
+```
+
+Later updates:
+
+```bash
+omarchy plugin update sl.departures    # installed with `plugin add`
+git pull && ./install                  # installed from a checkout
 ```
 
 Then click the widget and pick your stop. Nothing else is required — the
@@ -117,13 +131,21 @@ right on a laptop in any timezone, and keeps ticking between fetches.
 
 ## Development
 
-The plugin is a plain directory of QML plus a manifest. `./install` copies it
-into `~/.config/omarchy/plugins/sl.departures/` and reloads the shell.
+The plugin is a plain directory of QML plus a manifest. `./install` mirrors the
+checkout into `~/.config/omarchy/plugins/sl.departures/` and reloads the shell;
+it copies everything but the repository's own scaffolding, so a new QML file is
+never left behind by a stale file list.
 
 Editing files in the installed copy hot-reloads, but the QML engine can serve a
 cached compilation unit for nested components — `omarchy restart shell` is the
 reliable way to pick up a change. Installing via a symlink does not work at
 all: the shell's file watcher does not follow symlinks.
+
+Check the manifest against Omarchy's schema before pushing:
+
+```bash
+omarchy plugin validate "$PWD"
+```
 
 `Model.js` is deliberately free of QML types so it can be exercised directly:
 
@@ -134,4 +156,7 @@ node -e 'const M = require("/tmp/model.js"); ...'
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
+
+Departure data comes from SL via [Trafiklab](https://www.trafiklab.se/); this
+project is not affiliated with or endorsed by SL or Region Stockholm.
