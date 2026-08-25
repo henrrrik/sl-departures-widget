@@ -138,6 +138,13 @@ function clockOffset(departures, wallNow) {
   return samples[Math.floor(samples.length / 2)] - wallNow
 }
 
+// A legitimate anchor offset is bounded by how far a machine's timezone can
+// sit from Stockholm — just over a day across the extremes of UTC-12 and
+// UTC+14. Anything past that is a garbage anchor, not a timezone.
+function saneClockOffset(offset) {
+  return offset !== null && Math.abs(offset) < 26 * 3600 * 1000
+}
+
 // Best guess at the API's clock with no payload to anchor against. Tries the
 // zone conversion first and falls back to the machine clock, which is right
 // for the Stockholm-based machines this widget is for.
@@ -370,6 +377,9 @@ function filterSummary(config) {
 
 // ------------------------------------------------------------------- sites
 
+// The folded search keys are computed here, once per list load, because
+// searchSites runs on every keystroke over all ~6500 sites — folding inside
+// the search loop would redo a few million character comparisons per keypress.
 function parseSites(raw) {
   try {
     var data = JSON.parse(trim(raw) || "[]")
@@ -378,7 +388,15 @@ function parseSites(raw) {
     for (var i = 0; i < data.length; i++) {
       var site = data[i]
       if (!site || site.id === undefined || !site.name) continue
-      out.push({ id: intOr(site.id, 0), name: String(site.name), note: trim(site.note) })
+      var name = String(site.name)
+      var note = trim(site.note)
+      out.push({
+        id: intOr(site.id, 0),
+        name: name,
+        note: note,
+        folded: fold(name),
+        foldedNote: note === "" ? "" : fold(note)
+      })
     }
     return out
   } catch (e) {
@@ -412,10 +430,10 @@ function searchSites(sites, query, limit) {
   var scored = []
   for (var i = 0; i < sites.length; i++) {
     var site = sites[i]
-    var haystack = fold(site.name)
+    var haystack = site.folded
     var at = haystack.indexOf(needle)
     if (at === -1) {
-      if (site.note === "" || fold(site.note).indexOf(needle) === -1) continue
+      if (site.foldedNote === "" || site.foldedNote.indexOf(needle) === -1) continue
       at = 100
     }
     scored.push({ site: site, score: at * 1000 + haystack.length })
@@ -429,13 +447,20 @@ function searchSites(sites, query, limit) {
   return out
 }
 
+function findSiteById(sites, id) {
+  for (var i = 0; i < sites.length; i++) {
+    if (sites[i].id === id) return sites[i]
+  }
+  return null
+}
+
 // Used when a config names a stop but not an id, so `"siteName": "Slussen"`
 // alone is a working configuration.
 function findSiteByName(sites, name) {
   var needle = fold(trim(name))
   if (needle === "") return null
   for (var i = 0; i < sites.length; i++) {
-    if (fold(sites[i].name) === needle) return sites[i]
+    if (sites[i].folded === needle) return sites[i]
   }
   return null
 }

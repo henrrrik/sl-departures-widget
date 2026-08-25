@@ -18,33 +18,93 @@
     "category": "Info",
     "allowMultiple": true,
     "defaultSection": "center",
-    "defaults": {
-      "siteId": 0,
-      "siteName": "",
-      "transport": "",
-      "direction": 0,
-      "lines": "",
-      "walkMinutes": 0,
-      "barCount": 2,
-      "panelCount": 12,
-      "forecastMinutes": 90,
-      "refreshIntervalSec": 30,
-      "barFormat": "{line} {wait}",
-      "showIcon": true
-    },
     "schema": [
-      { "key": "siteId", "type": "integer", "label": "SL site id", "defaultValue": 0 },
-      { "key": "siteName", "type": "string", "label": "Stop name", "defaultValue": "" },
-      { "key": "transport", "type": "string", "label": "Transport mode filter (BUS/METRO/TRAM/TRAIN/SHIP/FERRY)", "defaultValue": "" },
-      { "key": "direction", "type": "integer", "label": "Direction code (0 = both)", "min": 0, "max": 2, "defaultValue": 0 },
-      { "key": "lines", "type": "string", "label": "Only these lines, comma separated", "defaultValue": "" },
-      { "key": "walkMinutes", "type": "integer", "label": "Minutes needed to reach the stop", "min": 0, "max": 120, "defaultValue": 0 },
-      { "key": "barCount", "type": "integer", "label": "Departures shown in the bar", "min": 1, "max": 6, "defaultValue": 2 },
-      { "key": "panelCount", "type": "integer", "label": "Departures shown in the popup", "min": 1, "max": 40, "defaultValue": 12 },
-      { "key": "forecastMinutes", "type": "integer", "label": "Forecast window (minutes)", "min": 10, "max": 360, "step": 10, "defaultValue": 90 },
-      { "key": "refreshIntervalSec", "type": "integer", "label": "Refresh interval (seconds)", "min": 15, "max": 600, "step": 5, "defaultValue": 30 },
-      { "key": "barFormat", "type": "string", "label": "Bar segment template ({line} {wait} {min} {clock} {destination} {icon})", "defaultValue": "{line} {wait}" },
-      { "key": "showIcon", "type": "boolean", "label": "Show transport icon in the bar", "defaultValue": true }
+      {
+        "key": "siteId",
+        "type": "integer",
+        "label": "SL site id",
+        "defaultValue": 0
+      },
+      {
+        "key": "siteName",
+        "type": "string",
+        "label": "Stop name",
+        "defaultValue": ""
+      },
+      {
+        "key": "transport",
+        "type": "string",
+        "label": "Transport mode filter (BUS/METRO/TRAM/TRAIN/SHIP/FERRY)",
+        "defaultValue": ""
+      },
+      {
+        "key": "direction",
+        "type": "integer",
+        "label": "Direction code (0 = both)",
+        "min": 0,
+        "max": 2,
+        "defaultValue": 0
+      },
+      {
+        "key": "lines",
+        "type": "string",
+        "label": "Only these lines, comma separated",
+        "defaultValue": ""
+      },
+      {
+        "key": "walkMinutes",
+        "type": "integer",
+        "label": "Minutes needed to reach the stop",
+        "min": 0,
+        "max": 120,
+        "defaultValue": 0
+      },
+      {
+        "key": "barCount",
+        "type": "integer",
+        "label": "Departures shown in the bar",
+        "min": 1,
+        "max": 6,
+        "defaultValue": 2
+      },
+      {
+        "key": "panelCount",
+        "type": "integer",
+        "label": "Departures shown in the popup",
+        "min": 1,
+        "max": 40,
+        "defaultValue": 12
+      },
+      {
+        "key": "forecastMinutes",
+        "type": "integer",
+        "label": "Forecast window (minutes)",
+        "min": 10,
+        "max": 360,
+        "step": 10,
+        "defaultValue": 90
+      },
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "Refresh interval (seconds)",
+        "min": 15,
+        "max": 600,
+        "step": 5,
+        "defaultValue": 30
+      },
+      {
+        "key": "barFormat",
+        "type": "string",
+        "label": "Bar segment template ({line} {wait} {min} {clock} {destination} {icon})",
+        "defaultValue": "{line} {wait}"
+      },
+      {
+        "key": "showIcon",
+        "type": "boolean",
+        "label": "Show transport icon in the bar",
+        "defaultValue": true
+      }
     ]
   }
 }

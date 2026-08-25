@@ -97,7 +97,11 @@ Settings live inline on the widget's entry in `~/.config/omarchy/shell.json`:
 | `showIcon` | `true` | Mode icon in front of the bar label. |
 
 The widget allows multiple instances, so a second entry with a different
-`siteId` gives you home and work side by side.
+`siteId` gives you home and work side by side. Instances in the same shell
+share one fetch per distinct stop/filter combination, so duplicates cost
+nothing extra. Put multiple instances in different bar sections: the shell's
+live settings propagation is per-section, and two identically-named widgets in
+one section can briefly mirror each other's settings changes until a restart.
 
 ### Finding a stop id from the terminal
 
@@ -115,9 +119,20 @@ the widget, which refreshes it weekly on its own.
 | File | Role |
 |---|---|
 | `Model.js` | All parsing, filtering, and formatting. Pure functions, no QML types. |
-| `Service.qml` | Fetching, caching, timers, clock anchoring. |
+| `SlHub.qml` | Singleton: the shared fetch loop, clock anchoring, and the site directory. |
+| `Service.qml` | Per-instance subscriber: config, filtered rows, name resolution. |
 | `Panel.qml` | The bar button and the popup. |
 | `bin/sl-sites` | Terminal helper for looking up stop ids. |
+
+### Shared fetching
+
+All widget instances in a shell process — including the copy each monitor's
+bar surface mounts — share one `SlHub` singleton. Instances subscribe to their
+departures URL; the hub runs a single fetch loop per distinct URL, parses each
+payload once, and keeps the parsed departures across failed refreshes so the
+board keeps counting down through an outage instead of freezing. The site list
+is likewise parsed once per process, only when the picker or a name lookup
+actually needs it.
 
 ### Clock anchoring
 
@@ -140,6 +155,12 @@ Editing files in the installed copy hot-reloads, but the QML engine can serve a
 cached compilation unit for nested components — `omarchy restart shell` is the
 reliable way to pick up a change. Installing via a symlink does not work at
 all: the shell's file watcher does not follow symlinks.
+
+Two non-obvious pieces of wiring: the `qmldir` declaring the `SlHub` singleton
+replaces QML's automatic same-directory type discovery, so every sibling type a
+file uses must be listed in it; and the settings defaults live in
+`Model.resolveConfig` alone — the manifest's `schema` mirrors them for the
+settings UI, but `resolveConfig` is the authority at runtime.
 
 Check the manifest against Omarchy's schema before pushing:
 

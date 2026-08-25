@@ -1,0 +1,5 @@
+# A qmldir in a directory replaces QML's automatic same-directory type
+# discovery, so every sibling type Panel.qml uses must be listed here — not
+# just the singleton this file exists to declare.
+singleton SlHub 1.0 SlHub.qml
+Service 1.0 Service.qml

@@ -16,7 +16,16 @@ CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy/sl-sites.json"
 die() { printf '%s\n' "$*" >&2; exit 1; }
 
 usage() {
-  sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
+  cat <<'EOF'
+Search SL site ids for the sl.departures bar widget.
+
+  sl-sites slussen          # stops matching "slussen"
+  sl-sites --refresh        # force a re-download of the stop list
+  sl-sites --departures 9192 [transport]
+
+The stop list is cached in ~/.cache/omarchy/sl-sites.json and shared with
+the widget, which refreshes it weekly on its own.
+EOF
   exit "${1:-0}"
 }
 

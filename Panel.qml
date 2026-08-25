@@ -76,20 +76,54 @@ Panel {
     suggestionIndex = 0
   }
 
+  // Key-sorted copy of a layout entry minus its id, so two entries can be
+  // compared for identity regardless of key order.
+  function entryFingerprint(entry) {
+    var keys = []
+    for (var key in entry) if (key !== "id") keys.push(key)
+    keys.sort()
+    var out = {}
+    for (var i = 0; i < keys.length; i++) out[keys[i]] = entry[keys[i]]
+    return JSON.stringify(out)
+  }
+
   // Persists the chosen stop back into this widget's own shell.json entry, so
   // picking a stop is a durable configuration change rather than a setting
   // that evaporates on restart. Applied locally first so the board switches on
   // the click itself, before the config round-trips through the shell.
+  //
+  // The write goes through mutateShellConfig and finds THIS instance's entry
+  // by comparing settings, not just ids: this widget allows multiple
+  // instances, and the shell's updateEntryInline convenience updates every
+  // entry with a matching id — picking a stop in one widget would repoint all
+  // of them. (Identical entries are interchangeable, so first match is fine.)
   function selectSite(site) {
     if (!site) return
+    var oldFingerprint = entryFingerprint(root.settings)
     var entry = { id: root.moduleName }
     for (var key in root.settings) if (key !== "id") entry[key] = root.settings[key]
     entry.siteId = site.id
     entry.siteName = site.name
 
     root.settings = entry
-    if (root.bar && root.bar.shell && typeof root.bar.shell.updateEntryInline === "function")
-      root.bar.shell.updateEntryInline(root.moduleName, entry)
+    var shell = root.bar ? root.bar.shell : null
+    if (shell && typeof shell.mutateShellConfig === "function") {
+      shell.mutateShellConfig(function(config) {
+        if (!config.bar || !config.bar.layout) return
+        var sections = ["left", "center", "right"]
+        for (var s = 0; s < sections.length; s++) {
+          var arr = config.bar.layout[sections[s]] || []
+          for (var i = 0; i < arr.length; i++) {
+            if (!arr[i] || String(arr[i].id) !== root.moduleName) continue
+            if (root.entryFingerprint(arr[i]) !== oldFingerprint) continue
+            arr[i] = entry
+            return
+          }
+        }
+      })
+    } else if (shell && typeof shell.updateEntryInline === "function") {
+      shell.updateEntryInline(root.moduleName, entry)
+    }
 
     cancelPicking()
   }
@@ -124,6 +158,13 @@ Panel {
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
+
+  // A refresh can shrink the board under the keyboard cursor; clamping keeps
+  // the highlight on the last row instead of silently vanishing.
+  onVisibleRowsChanged: {
+    if (cursorActive && rowIndex >= visibleRows.length)
+      rowIndex = Math.max(0, visibleRows.length - 1)
+  }
 
   onOpenedChanged: {
     if (!opened) {
@@ -171,7 +212,7 @@ Panel {
     fixedHeight: root.vertical ? root.barLines.length * Style.bar.iconSlot : -1
     horizontalMargin: 8.75
     verticalPadding: 8.75
-    tooltipText: root.opened ? "" : Model.tooltipText(root.barDepartures, root.config, service.siteLabel)
+    tooltipText: root.opened ? "" : Model.tooltipText(service.rows, root.config, service.siteLabel)
     dimmed: service.fetchState === "loading" && service.rows.length === 0
 
     onPressed: function(b) {
