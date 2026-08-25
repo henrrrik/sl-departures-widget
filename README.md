@@ -103,7 +103,18 @@ the widget, which refreshes it weekly on its own.
 | `Model.js` | All parsing, filtering, and formatting. Pure functions, no QML types. |
 | `Service.qml` | Fetching, caching, timers, clock anchoring. |
 | `Panel.qml` | The bar button and the popup. |
+| `SlLogo.qml` | The SL mark as vector paths, filled with the theme colour. |
 | `bin/sl-sites` | Terminal helper for looking up stop ids. |
+
+### The logo
+
+The SL mark in the popup's top corner is drawn from vector paths rather than
+loaded as an image, so it takes the active Omarchy theme's foreground colour
+instead of SL's brand blue and stays crisp at any size. The geometry comes from
+the [logo on Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Storstockholms_Lokaltrafik_logo.svg)
+— public domain there, but trademarked — with that file's nested transforms
+flattened; the original is kept in `assets/` for provenance. If you publish a
+fork, check SL's brand guidelines before shipping the mark.
 
 ### Clock anchoring
 

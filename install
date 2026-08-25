@@ -10,10 +10,22 @@ id=sl.departures
 src=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 dest="$HOME/.config/omarchy/plugins/$id"
 
+# Mirror the whole checkout minus the repository's own scaffolding, so a new
+# QML file is never left behind by a hand-maintained file list.
 mkdir -p "$dest"
-for path in manifest.json Model.js Service.qml Panel.qml bin; do
-  cp -r "$src/$path" "$dest/"
-done
+if command -v rsync >/dev/null; then
+  rsync -a --delete \
+    --exclude '.git' --exclude '.gitignore' --exclude 'install' --exclude 'README.md' \
+    "$src/" "$dest/"
+else
+  rm -rf "${dest:?}"/*
+  for path in "$src"/*; do
+    case ${path##*/} in
+      .git|.gitignore|install|README.md) continue ;;
+    esac
+    cp -r "$path" "$dest/"
+  done
+fi
 printf 'Installed %s -> %s\n' "$id" "$dest"
 
 if omarchy-shell shell ping >/dev/null 2>&1; then

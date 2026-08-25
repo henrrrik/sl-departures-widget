@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   width="210"
+   height="171"
+   id="svg1901"
+   sodipodi:version="0.32"
+   inkscape:version="0.46"
+   sodipodi:docname="Storstockholms Lokaltrafikin logo.svg"
+   sodipodi:docbase="/home/tsoots/ohj/translations/po"
+   version="1.0"
+   inkscape:output_extension="org.inkscape.output.svg.inkscape">
+  <defs
+     id="defs1903">
+    <inkscape:perspective
+       sodipodi:type="inkscape:persp3d"
+       inkscape:vp_x="0 : 526.18109 : 1"
+       inkscape:vp_y="0 : 1000 : 0"
+       inkscape:vp_z="744.09448 : 526.18109 : 1"
+       inkscape:persp3d-origin="372.04724 : 350.78739 : 1"
+       id="perspective7" />
+    <clipPath
+       id="clipPath2513"
+       clipPathUnits="userSpaceOnUse">
+      <path
+         id="path2515"
+         d="M 0,260.575 L 595.26,260.575 L 595.26,220.89 L 0,220.89 L 0,260.575 z" />
+    </clipPath>
+    <clipPath
+       id="clipPath2491"
+       clipPathUnits="userSpaceOnUse">
+      <path
+         id="path2493"
+         d="M 552.756,90.142 L 494.207,90.142 L 494.207,42.521 L 552.756,42.521 L 552.756,90.142 z" />
+    </clipPath>
+    <clipPath
+       id="clipPath2459"
+       clipPathUnits="userSpaceOnUse">
+      <path
+         id="path2461"
+         d="M 0,841.875 L 595.26,841.875 L 595.26,0.015 L 0,0.015 L 0,841.875 z" />
+    </clipPath>
+    <inkscape:perspective
+       id="perspective2447"
+       inkscape:persp3d-origin="372.04724 : 350.78739 : 1"
+       inkscape:vp_z="744.09448 : 526.18109 : 1"
+       inkscape:vp_y="0 : 1000 : 0"
+       inkscape:vp_x="0 : 526.18109 : 1"
+       sodipodi:type="inkscape:persp3d" />
+  </defs>
+  <sodipodi:namedview
+     id="base"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:pageopacity="0.0"
+     inkscape:pageshadow="2"
+     inkscape:zoom="4.4678363"
+     inkscape:cx="105"
+     inkscape:cy="85.499999"
+     inkscape:document-units="px"
+     inkscape:current-layer="layer1"
+     gridtolerance="10000"
+     inkscape:window-width="1280"
+     inkscape:window-height="977"
+     inkscape:window-x="-4"
+     inkscape:window-y="-4"
+     showgrid="false" />
+  <metadata
+     id="metadata1906">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <g
+     inkscape:label="Taso 1"
+     inkscape:groupmode="layer"
+     id="layer1"
+     style="opacity:1"
+     transform="translate(-548.57831,-631.53488)">
+    <g
+       id="g2587"
+       transform="matrix(2.8693914,0,0,2.8726822,-1025.5078,-1502.8931)">
+      <g
+         transform="matrix(1.25,0,0,-1.25,585.20839,788.87499)"
+         id="g2475">
+        <path
+           id="path2477"
+           style="fill:#00adef;fill-opacity:1;fill-rule:nonzero;stroke:none"
+           d="M 0,0 C 4.9,0 9.507,1.91 12.972,5.374 C 16.438,8.839 18.346,13.445 18.346,18.346 C 18.346,23.246 16.438,27.855 12.972,31.319 C 9.507,34.783 4.9,36.693 0,36.693 C -10.116,36.693 -18.347,28.463 -18.347,18.346 C -18.347,13.445 -16.438,8.839 -12.973,5.374 C -9.507,1.91 -4.9,0 0,0 M -15.463,18.346 C -15.463,22.478 -13.856,26.36 -10.934,29.28 C -8.014,32.2 -4.131,33.808 0,33.808 C 4.13,33.808 8.013,32.2 10.933,29.28 C 13.853,26.36 15.462,22.478 15.462,18.346 C 15.462,9.821 8.525,2.885 0,2.885 C -4.131,2.885 -8.014,4.493 -10.934,7.413 C -13.856,10.333 -15.463,14.217 -15.463,18.346" />
+      </g>
+      <g
+         transform="matrix(1.25,0,0,-1.25,574.67214,769.10624)"
+         id="g2479">
+        <path
+           id="path2481"
+           style="fill:#00adef;fill-opacity:1;fill-rule:nonzero;stroke:none"
+           d="M 0,0 C 0.023,-0.893 0.55,-2.742 2.961,-2.742 C 4.634,-2.742 5.83,-1.812 5.83,-0.712 C 5.83,0.405 5.16,1.383 3.238,1.755 L 1.214,2.152 C -1.369,2.741 -2.948,4.114 -2.948,6.593 C -2.948,9.103 -1.145,11.542 3.01,11.542 C 7.693,11.542 8.681,8.001 8.681,6.605 L 5.477,6.605 C 5.477,6.605 5.591,8.974 2.819,8.974 C 1.295,8.974 0.267,8.302 0.267,6.851 C 0.267,5.574 1.454,5.112 2.138,4.956 L 5.136,4.314 C 7.51,3.744 9.143,2.481 9.143,-0.288 C 9.143,-4.283 5.596,-5.417 2.986,-5.417 C -1.619,-5.417 -3.188,-2.33 -3.188,0 L 0,0" />
+      </g>
+      <g
+         transform="matrix(1.25,0,0,-1.25,592.76214,771.91999)"
+         id="g2483">
+        <path
+           id="path2485"
+           style="fill:#00adef;fill-opacity:1;fill-rule:nonzero;stroke:none"
+           d="M 0,0 L 6.145,0 L 6.145,-2.826 L -3.305,-2.826 L -3.305,13.492 L 0,13.492 L 0,0" />
+      </g>
+      <g
+         transform="matrix(1.25,0,0,-1.25,-69.18036,855.68624)"
+         id="g2487">
+        <g
+           clip-path="url(#clipPath2491)"
+           id="g2489">
+          <g
+             transform="translate(549.784,73.958)"
+             id="g2495">
+            <path
+               id="path2497"
+               style="fill:#00adef;fill-opacity:1;fill-rule:nonzero;stroke:none"
+               d="M 0,0 C 0.058,-0.716 0.087,-1.436 0.087,-2.163 C 0.087,-9.213 -2.656,-15.84 -7.641,-20.823 C -12.626,-25.808 -19.253,-28.554 -26.302,-28.554 C -33.351,-28.554 -39.979,-25.808 -44.964,-20.823 C -49.949,-15.84 -52.694,-9.213 -52.694,-2.163 C -52.694,-1.436 -52.662,-0.716 -52.604,0 L -55.499,0 C -55.551,-0.717 -55.577,-1.437 -55.577,-2.163 C -55.577,-9.982 -52.532,-17.335 -47.002,-22.862 C -41.473,-28.393 -34.122,-31.438 -26.302,-31.438 C -18.482,-31.438 -11.132,-28.393 -5.602,-22.862 C -0.072,-17.335 2.972,-9.982 2.972,-2.163 C 2.972,-1.437 2.947,-0.717 2.894,0 L 0,0" />
+          </g>
+        </g>
+      </g>
+      <g
+         transform="matrix(1.25,0,0,-1.25,611.19214,763.23874)"
+         id="g2499">
+        <path
+           id="path2501"
+           style="fill:#00adef;fill-opacity:1;fill-rule:nonzero;stroke:none"
+           d="M 0,0 C 0.072,-0.714 0.11,-1.435 0.11,-2.163 C 0.11,-7.753 -2.067,-13.008 -6.02,-16.961 C -9.972,-20.913 -15.227,-23.091 -20.816,-23.091 C -26.406,-23.091 -31.661,-20.913 -35.614,-16.961 C -39.566,-13.008 -41.745,-7.753 -41.745,-2.163 C -41.745,-1.435 -41.704,-0.714 -41.634,0 L -44.529,0 C -44.594,-0.716 -44.627,-1.436 -44.627,-2.163 C -44.627,-8.524 -42.151,-14.503 -37.653,-19.001 C -33.157,-23.497 -27.177,-25.973 -20.816,-25.973 C -14.458,-25.973 -8.478,-23.497 -3.98,-19.001 C 0.517,-14.503 2.993,-8.524 2.993,-2.163 C 2.993,-1.436 2.959,-0.716 2.895,0 L 0,0" />
+      </g>
+    </g>
+    <text
+       id="text2503"
+       x="-16.296486"
+       y="-129.52638"
+       style="font-size:15px">
+      <tspan
+         style="font-size:17.5px;font-variant:normal;font-weight:bold;writing-mode:lr-tb;fill:#ffffff;fill-opacity:1;fill-rule:nonzero;stroke:none;font-family:SLGothicText;-inkscape-font-specification:SLGothicText-Bold"
+         x="-16.296486 -5.131485 5.9460158 11.196014 21.748516 28.118517 37.323513 44.323513 52.408516 58.778515 67.983521 76.733521 86.06102 95.843513 105.04851 109.73852 124.38601 132.47101 137.72101 147.5735 156.77852 166.10602 175.08353 179.77351 186.14351 193.14352 202.121 207.26251 212.40752 221.73502"
+         y="-129.52638"
+         sodipodi:role="line"
+         id="tspan2505">AB Storstockholms Lokaltraﬁ k</tspan>
+      <tspan
+         style="font-size:17.5px;font-variant:normal;font-weight:bold;writing-mode:lr-tb;fill:#ffffff;fill-opacity:1;fill-rule:nonzero;stroke:none;font-family:SLGothicText;-inkscape-font-specification:SLGothicText-Bold"
+         x="-16.296486 -5.3764849 -0.68648511 8.2910147 18.073515 26.788513 33.788517 38.478516 48.261013"
+         y="-108.27614"
+         sodipodi:role="line"
+         id="tspan2507">Planering</tspan>
+    </text>
+  </g>
+</svg>
