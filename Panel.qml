@@ -261,17 +261,6 @@ Panel {
             font.pixelSize: Style.font.display
           }
         }
-
-        // Whose data this is, in the corner where a masthead belongs. Painted
-        // in the theme foreground rather than SL blue, and held back a little
-        // so it reads as provenance and not as a control.
-        trailingControl: Component {
-          SlLogo {
-            logoSize: Math.round(Style.font.display * 1.1)
-            color: root.foreground
-            opacity: 0.75
-          }
-        }
       }
 
       // ---------------------------------------------------------- body
