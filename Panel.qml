@@ -212,10 +212,18 @@ Panel {
     open: root.opened
     focusTarget: root.picking ? searchField : keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(360))
-    contentHeight: panel.fittedContentHeight(
-      headerBlock.implicitHeight + bodyColumn.implicitHeight + footerBlock.implicitHeight
-        + Style.space(24),
-      Style.space(560))
+    contentHeight: panel.fittedContentHeight(chromeHeight + bodyColumn.implicitHeight, Style.space(560))
+
+    // Everything the fixed bands occupy around the scrolling body. The anchors
+    // below read the same three gaps, so the reservation cannot drift out of
+    // step with the layout — and a body of one search field or one row asks
+    // for exactly the height it needs instead of coming up a few pixels short
+    // and being clipped by the Flickable.
+    readonly property int bodyTopGap: Style.space(12)
+    readonly property int bodyBottomGap: Style.space(10)
+    readonly property int footerTopGap: Style.space(10)
+    readonly property int chromeHeight: headerBlock.implicitHeight + bodyTopGap + bodyBottomGap
+      + footerSeparator.height + footerTopGap + footerBlock.implicitHeight
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -260,9 +268,9 @@ Panel {
       Flickable {
         id: panelFlick
         anchors.top: headerBlock.bottom
-        anchors.topMargin: Style.space(12)
+        anchors.topMargin: panel.bodyTopGap
         anchors.bottom: footerSeparator.top
-        anchors.bottomMargin: Style.space(10)
+        anchors.bottomMargin: panel.bodyBottomGap
         anchors.left: parent.left
         anchors.right: parent.right
         contentWidth: width
@@ -459,7 +467,7 @@ Panel {
       PanelSeparator {
         id: footerSeparator
         anchors.bottom: footerBlock.top
-        anchors.bottomMargin: Style.space(10)
+        anchors.bottomMargin: panel.footerTopGap
         anchors.left: parent.left
         anchors.right: parent.right
         foreground: root.foreground
