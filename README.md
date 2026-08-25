@@ -43,6 +43,24 @@ git pull && ./install                  # installed from a checkout
 Then click the widget and pick your stop. Nothing else is required — the
 picker writes the stop into `~/.config/omarchy/shell.json` for you.
 
+### Uninstall
+
+```bash
+omarchy plugin remove sl.departures
+```
+
+This disables the widget and deletes `~/.config/omarchy/plugins/sl.departures/`.
+The only other things the plugin ever creates are its own entry in
+`~/.config/omarchy/shell.json` (removed by the command above) and the stop-list
+cache at `~/.cache/omarchy/sl-sites.json`, which is safe to delete.
+
+### Dependencies
+
+Everything the widget needs ships with a stock Omarchy install: `curl` and
+`bash` at runtime, `python3` additionally for the optional `bin/sl-sites`
+helper, and `rsync` (with a plain-`cp` fallback) for the local `./install`
+script. There are no QML dependencies beyond the Omarchy shell itself.
+
 ## Using it
 
 | Action | What it does |
