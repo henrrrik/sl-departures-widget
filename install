@@ -15,13 +15,13 @@ dest="$HOME/.config/omarchy/plugins/$id"
 mkdir -p "$dest"
 if command -v rsync >/dev/null; then
   rsync -a --delete \
-    --exclude '.git' --exclude '.gitignore' --exclude 'install' --exclude 'README.md' \
+    --exclude '.git' --exclude '.gitignore' --exclude 'install' --exclude 'README.md' --exclude 'preview.png' \
     "$src/" "$dest/"
 else
   rm -rf "${dest:?}"/*
   for path in "$src"/*; do
     case ${path##*/} in
-      .git|.gitignore|install|README.md) continue ;;
+      .git|.gitignore|install|README.md|preview.png) continue ;;
     esac
     cp -r "$path" "$dest/"
   done
