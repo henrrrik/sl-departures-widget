@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Search SL site ids for the sl.departures bar widget.
+#
+#   sl-sites slussen          # stops matching "slussen"
+#   sl-sites --refresh        # force a re-download of the stop list
+#   sl-sites --departures 9192 [transport]
+#
+# The stop list is cached in ~/.cache/omarchy/sl-sites.json and shared with
+# the widget, which refreshes it weekly on its own.
+
+set -euo pipefail
+
+API="https://transport.integration.sl.se/v1"
+CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy/sl-sites.json"
+
+die() { printf '%s\n' "$*" >&2; exit 1; }
+
+usage() {
+  sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
+  exit "${1:-0}"
+}
+
+command -v curl >/dev/null || die "sl-sites needs curl"
+command -v python3 >/dev/null || die "sl-sites needs python3"
+
+fetch_sites() {
+  mkdir -p "$(dirname -- "$CACHE")"
+  curl -fsS --max-time 30 "$API/sites?expand=false" -o "$CACHE.tmp"
+  mv -f "$CACHE.tmp" "$CACHE"
+}
+
+ensure_cache() {
+  if [[ ! -s $CACHE ]] || [[ -n $(find "$CACHE" -mtime +7 2>/dev/null) ]]; then
+    fetch_sites
+  fi
+}
+
+search() {
+  ensure_cache
+  python3 -c '
+import json, sys, unicodedata
+
+def fold(s):
+    return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
+
+needle = fold(sys.argv[2])
+with open(sys.argv[1], encoding="utf-8") as fh:
+    sites = json.load(fh)
+
+hits = []
+for site in sites:
+    name = site.get("name") or ""
+    note = site.get("note") or ""
+    at = fold(name).find(needle)
+    if at == -1:
+        if needle not in fold(note):
+            continue
+        at = 100
+    hits.append((at, len(name), name, note, site["id"]))
+
+if not hits:
+    sys.exit("no stop matches " + sys.argv[2])
+
+for _, _, name, note, sid in sorted(hits)[:40]:
+    print("%-8d %s%s" % (sid, name, "  (%s)" % note if note else ""))
+' "$CACHE" "$1"
+}
+
+departures() {
+  local site=$1 transport=${2:-}
+  local url="$API/sites/$site/departures?forecast=90"
+  [[ -n $transport ]] && url="$url&transport=${transport^^}"
+  curl -fsS --max-time 15 "$url" | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+for d in data.get("departures", []):
+    line = d.get("line", {})
+    print("%-6s %-5s %-28s %s" % (
+        line.get("transport_mode", ""),
+        line.get("designation", ""),
+        (d.get("destination") or "")[:28],
+        d.get("display", "")))
+for dev in data.get("stop_deviations", []):
+    print("! " + (dev.get("message") or ""))
+'
+}
+
+[[ $# -eq 0 ]] && usage 1
+
+case $1 in
+  -h|--help) usage ;;
+  --refresh) fetch_sites; printf 'Cached %s\n' "$CACHE" ;;
+  --departures) shift; [[ $# -ge 1 ]] || die "--departures needs a site id"; departures "$@" ;;
+  -*) die "unknown option: $1" ;;
+  *) search "$1" ;;
+esac
