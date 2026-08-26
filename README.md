@@ -10,6 +10,8 @@ Click it and you get the full board: line, destination, berth, minutes left,
 cancellations, and any service messages for the station — plus a searchable
 stop picker, so you never have to look up a stop id by hand.
 
+<img src="preview.png" alt="The widget in the bar, and the popup departure board for T-Centralen" width="420">
+
 It reads SL's open [Transport API](https://www.trafiklab.se/api/trafiklab-apis/sl/transport/),
 which needs no account and no API key.
 
