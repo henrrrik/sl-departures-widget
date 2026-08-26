@@ -296,6 +296,7 @@ Panel {
 
         iconComponent: Component {
           Text {
+            textFormat: Text.PlainText
             text: root.barDepartures.length > 0 ? root.barDepartures[0].icon : "󰥔"
             color: root.foreground
             font.family: root.fontFamily
@@ -362,6 +363,8 @@ Panel {
             }
 
             Text {
+
+              textFormat: Text.PlainText
               visible: service.sitesError !== ""
               width: parent.width
               text: service.sitesError
@@ -372,6 +375,8 @@ Panel {
             }
 
             Text {
+
+              textFormat: Text.PlainText
               visible: !service.sitesLoading && service.sitesError === ""
                 && searchField.text.length > 0 && root.suggestions.length === 0
               width: parent.width
@@ -399,6 +404,8 @@ Panel {
                   foreground: root.foreground
 
                   Text {
+
+                    textFormat: Text.PlainText
                     id: suggestionLabel
                     anchors.left: parent.left
                     anchors.right: parent.right
@@ -427,6 +434,8 @@ Panel {
           // -------------------------------------------- departure board
 
           Text {
+
+            textFormat: Text.PlainText
             visible: !root.picking && service.lastError !== ""
             width: parent.width
             text: service.lastError
@@ -437,6 +446,8 @@ Panel {
           }
 
           Text {
+
+            textFormat: Text.PlainText
             visible: !root.picking && root.visibleRows.length === 0 && service.lastError === ""
             width: parent.width
             text: root.config.siteId <= 0
@@ -490,6 +501,8 @@ Panel {
               model: service.stopDeviations
 
               Text {
+
+                textFormat: Text.PlainText
                 required property var modelData
                 width: parent.width
                 text: "• " + String(modelData.message || "")
@@ -522,6 +535,8 @@ Panel {
         implicitHeight: Math.max(footerHint.implicitHeight, footerAction.implicitHeight)
 
         Text {
+
+          textFormat: Text.PlainText
           id: footerHint
           anchors.left: parent.left
           anchors.right: footerAction.left
@@ -589,6 +604,8 @@ Panel {
         implicitHeight: Math.max(lineLabel.implicitHeight, waitLabel.implicitHeight)
 
         Text {
+
+          textFormat: Text.PlainText
           id: modeIcon
           anchors.left: parent.left
           anchors.verticalCenter: parent.verticalCenter
@@ -599,6 +616,8 @@ Panel {
         }
 
         Text {
+
+          textFormat: Text.PlainText
           id: lineLabel
           anchors.left: modeIcon.right
           anchors.leftMargin: Style.space(8)
@@ -612,6 +631,8 @@ Panel {
         }
 
         Text {
+
+          textFormat: Text.PlainText
           id: destinationLabel
           anchors.left: lineLabel.right
           anchors.leftMargin: Style.space(6)
@@ -627,6 +648,8 @@ Panel {
         }
 
         Text {
+
+          textFormat: Text.PlainText
           id: waitLabel
           anchors.right: parent.right
           anchors.verticalCenter: parent.verticalCenter
@@ -645,6 +668,8 @@ Panel {
       }
 
       Text {
+
+        textFormat: Text.PlainText
         visible: text !== ""
         width: parent.width
         text: {

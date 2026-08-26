@@ -48,6 +48,16 @@ function trim(value) {
   return String(value === undefined || value === null ? "" : value).replace(/^\s+|\s+$/g, "")
 }
 
+// API-derived display strings pass through here before anything renders them.
+// Angle brackets are what flips a QML Text in its default AutoText mode into
+// rich-text interpretation (Qt's mightBeRichText sniff), and no legitimate SL
+// name, destination, or message contains them. Our own Text items also set
+// Text.PlainText explicitly; this covers the strings that flow into shell
+// components we do not own — the hero title, the bar label, the tooltip.
+function plain(value) {
+  return trim(value).replace(/[<>]/g, "")
+}
+
 function intOr(value, fallback) {
   var n = parseInt(value, 10)
   return isFinite(n) ? n : fallback
@@ -222,10 +232,17 @@ function parseDepartures(raw) {
   try {
     var data = JSON.parse(text)
     if (!data || typeof data !== "object") throw new Error("not an object")
+    var stopDeviations = (Array.isArray(data.stop_deviations) ? data.stop_deviations : [])
+      .map(function(dev) {
+        return {
+          message: plain(dev && dev.message),
+          importance_level: intOr(dev && dev.importance_level, 0)
+        }
+      })
     return {
       ok: true,
       departures: Array.isArray(data.departures) ? data.departures : [],
-      stopDeviations: Array.isArray(data.stop_deviations) ? data.stop_deviations : [],
+      stopDeviations: stopDeviations,
       error: ""
     }
   } catch (e) {
@@ -247,22 +264,22 @@ function toRows(departures, now) {
 
     rows.push({
       key: String(d.journey && d.journey.id ? d.journey.id : i) + ":" + (d.scheduled || i),
-      line: trim(line.designation),
+      line: plain(line.designation),
       mode: String(line.transport_mode || "").toUpperCase(),
       icon: transportIcon(line.transport_mode),
-      destination: trim(d.destination || d.direction),
+      destination: plain(d.destination || d.direction),
       direction: intOr(d.direction_code, 0),
       minutes: minutes,
       minutesText: minutesText(minutes),
       waitText: waitText(minutes),
       waitLabel: waitLabel(minutes),
       clock: clockText(d),
-      display: trim(d.display),
+      display: plain(d.display),
       atStop: String(d.state || "").toUpperCase() === "ATSTOP",
       cancelled: cancelled,
       // The berth letter is the useful half of stop_point; its `name` just
       // repeats the site you already asked for.
-      berth: trim(d.stop_point && d.stop_point.designation),
+      berth: plain(d.stop_point && d.stop_point.designation),
       deviationText: deviationText(deviations),
       deviationLevel: maxImportance(deviations)
     })
@@ -273,7 +290,7 @@ function toRows(departures, now) {
 function deviationText(deviations) {
   var messages = []
   for (var i = 0; i < (deviations || []).length; i++) {
-    var message = trim(deviations[i] && deviations[i].message)
+    var message = plain(deviations[i] && deviations[i].message)
     if (message !== "" && messages.indexOf(message) === -1) messages.push(message)
   }
   return messages.join(" · ")
@@ -388,8 +405,8 @@ function parseSites(raw) {
     for (var i = 0; i < data.length; i++) {
       var site = data[i]
       if (!site || site.id === undefined || !site.name) continue
-      var name = String(site.name)
-      var note = trim(site.note)
+      var name = plain(site.name)
+      var note = plain(site.note)
       out.push({
         id: intOr(site.id, 0),
         name: name,
