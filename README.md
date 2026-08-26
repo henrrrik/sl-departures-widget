@@ -58,10 +58,11 @@ cache at `~/.cache/omarchy/sl-sites.json`, which is safe to delete.
 
 ### Dependencies
 
-Everything the widget needs ships with a stock Omarchy install: `curl` and
-`bash` at runtime, `python3` additionally for the optional `bin/sl-sites`
-helper, and `rsync` (with a plain-`cp` fallback) for the local `./install`
-script. There are no QML dependencies beyond the Omarchy shell itself.
+Everything the widget needs ships with a stock Omarchy install: `curl`,
+`bash`, and `python3` at runtime (python performs the descriptor-validated,
+size-bounded read of the stop-list cache), and `rsync` (with a plain-`cp`
+fallback) for the local `./install` script. There are no QML dependencies
+beyond the Omarchy shell itself.
 
 ## Using it
 

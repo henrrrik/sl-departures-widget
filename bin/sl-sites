@@ -35,10 +35,17 @@ for dependency in curl python3; do
   command -v "$dependency" >/dev/null || die "sl-sites needs $dependency"
 done
 
+# Staged through mktemp (private, unpredictable) rather than a fixed .tmp
+# path, size-capped, and published with an atomic rename.
 fetch_sites() {
-  mkdir -p "$(dirname -- "$CACHE")"
-  curl -fsS --max-time 30 "$API/sites?expand=false" -o "$CACHE.tmp"
-  mv -f "$CACHE.tmp" "$CACHE"
+  local dir tmp
+  dir=$(dirname -- "$CACHE")
+  mkdir -p "$dir"
+  tmp=$(mktemp -- "$dir/.sl-sites.XXXXXXXX")
+  trap 'rm -f -- "$tmp"' RETURN
+  curl -fsS --max-time 30 --max-filesize 8388608 -o "$tmp" -- "$API/sites?expand=false"
+  [[ $(stat -c %s -- "$tmp") -le 8388608 ]] || die "stop list larger than expected, refusing"
+  mv -f -- "$tmp" "$CACHE"
 }
 
 ensure_cache() {
@@ -50,14 +57,25 @@ ensure_cache() {
 search() {
   ensure_cache
   python3 -c '
-import json, sys, unicodedata
+import json, os, stat, sys, unicodedata
 
 def fold(s):
     return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
 
+def bounded_read(path, cap=8 * 1024 * 1024):
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except OSError:
+        sys.exit("refusing the stop list cache (unreadable, or a symlink)")
+    st = os.fstat(fd)
+    if not stat.S_ISREG(st.st_mode) or st.st_size > cap:
+        os.close(fd)
+        sys.exit("refusing the stop list cache (not a regular file, or too large)")
+    with os.fdopen(fd, "rb") as fh:
+        return fh.read(cap)
+
 needle = fold(sys.argv[2])
-with open(sys.argv[1], encoding="utf-8") as fh:
-    sites = json.load(fh)
+sites = json.loads(bounded_read(sys.argv[1]).decode("utf-8"))
 
 hits = []
 for site in sites:
@@ -88,7 +106,8 @@ departures() {
   local payload
   payload=$(mktemp)
   trap 'rm -f "$payload"' RETURN
-  curl -fsS --max-time 15 "$url" -o "$payload"
+  curl -fsS --max-time 15 --max-filesize 4194304 -o "$payload" -- "$url"
+  [[ $(stat -c %s -- "$payload") -le 4194304 ]] || die "departures response larger than expected, refusing"
   python3 -c '
 import json, sys
 data = json.load(sys.stdin)

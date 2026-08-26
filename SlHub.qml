@@ -84,7 +84,13 @@ Item {
     _stdoutText = null
     _stderrText = null
     _exitCode = null
-    fetchProcess.command = ["curl", "-fsS", "--max-time", "10", url]
+    // The response is capped in transit: --max-filesize aborts early when the
+    // server declares a size, and the head pipe hard-bounds what can reach
+    // this process when it does not. pipefail makes a truncated (i.e. above
+    // cap) transfer a failed fetch rather than a silently clipped payload.
+    fetchProcess.command = ["bash", "-c",
+      "set -o pipefail; curl -fsS --max-time 10 --max-filesize 4194304 -- \"$1\" | head -c 4194304",
+      "bash", url]
     fetchProcess.running = true
     watchdog.restart()
     fetchingChanged(url)
@@ -189,27 +195,49 @@ Item {
   //
   // The 1.3 MB site list is cached on disk, refreshed weekly, and parsed into
   // memory once per shell process — and only when something actually needs it
-  // (the picker, or resolving a configured name to an id). preload: false on
-  // the FileView keeps merely declaring the path from reading the file.
+  // (the picker, or resolving a configured name to an id).
 
   property var sites: []
   property bool sitesLoading: false
   property string sitesError: ""
   property bool _sitesRetried: false
+  property string _siteCacheText: ""
   readonly property string sitesCachePath: Quickshell.env("HOME") + "/.cache/omarchy/sl-sites.json"
 
   signal sitesReady()
 
-  // The FileView starts with preload off so declaring the path costs nothing;
-  // flipping preload on is what arms the actual read (reload() alone does not
-  // load a file that was never preloaded). Subsequent retries use reload().
   function loadSites() {
     if (sites.length > 0 || sitesLoading) return
     sitesLoading = true
     sitesError = ""
     _sitesRetried = false
-    if (!sitesFile.preload) sitesFile.preload = true
-    else sitesFile.reload()
+    readSiteCache()
+  }
+
+  // Reads the cache through one file descriptor: O_NOFOLLOW refuses symlinks,
+  // fstat on that same descriptor confirms a regular file under the size cap,
+  // and the read itself is bounded by the cap — nothing between check and
+  // read can swap the file out, and an oversized or planted cache never
+  // reaches the long-running shell process. Exit codes: 2 = missing (the
+  // normal cold start), 3 = refused (symlink, not regular, or too large).
+  function readSiteCache() {
+    siteReadProcess.command = ["python3", "-c",
+      "import os, stat, sys\n"
+      + "cap = 8 * 1024 * 1024\n"
+      + "try:\n"
+      + "    fd = os.open(sys.argv[1], os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)\n"
+      + "except FileNotFoundError:\n"
+      + "    sys.exit(2)\n"
+      + "except OSError:\n"
+      + "    sys.exit(3)\n"
+      + "st = os.fstat(fd)\n"
+      + "if not stat.S_ISREG(st.st_mode) or st.st_size > cap:\n"
+      + "    os.close(fd)\n"
+      + "    sys.exit(3)\n"
+      + "with os.fdopen(fd, 'rb') as fh:\n"
+      + "    sys.stdout.buffer.write(fh.read(cap))\n",
+      sitesCachePath]
+    siteReadProcess.running = true
   }
 
   function searchSites(query, limit) {
@@ -219,9 +247,15 @@ Item {
   function ensureSiteCache() {
     if (siteCacheProcess.running) return
     siteCacheProcess.command = ["bash", "-c",
-      "set -e; cache=\"$1\"; url=\"$2\"; mkdir -p \"$(dirname -- \"$cache\")\"; "
+      // The staging file comes from mktemp (private, 0600, unpredictable), so
+      // a pre-planted path cannot redirect the write; the download is size-
+      // capped and verified before the atomic rename publishes it.
+      "set -e; cache=\"$1\"; url=\"$2\"; dir=$(dirname -- \"$cache\"); mkdir -p \"$dir\"; "
       + "if [ ! -s \"$cache\" ] || [ -n \"$(find \"$cache\" -mtime +7 2>/dev/null)\" ]; then "
-      + "  curl -fsS --max-time 30 \"$url\" -o \"$cache.tmp\" && mv -f \"$cache.tmp\" \"$cache\"; "
+      + "  tmp=$(mktemp -- \"$dir/.sl-sites.XXXXXXXX\"); trap 'rm -f -- \"$tmp\"' EXIT; "
+      + "  curl -fsS --max-time 30 --max-filesize 8388608 -o \"$tmp\" -- \"$url\"; "
+      + "  [ \"$(stat -c %s -- \"$tmp\")\" -le 8388608 ]; "
+      + "  mv -f -- \"$tmp\" \"$cache\"; trap - EXIT; "
       + "fi",
       "bash", sitesCachePath, Model.sitesUrl()]
     siteCacheProcess.running = true
@@ -236,31 +270,38 @@ Item {
         hub.sitesError = "Could not download the SL stop list"
         return
       }
-      if (hub.sitesLoading) hub.sitesFile.reload()
+      if (hub.sitesLoading) hub.readSiteCache()
     }
   }
 
-  property FileView sitesFile: FileView {
-    path: hub.sitesCachePath
-    preload: false
-    printErrors: false
-    onLoaded: {
-      hub.sites = Model.parseSites(text())
-      hub.sitesError = hub.sites.length > 0 ? "" : "The SL stop list came back empty"
-      hub.sitesLoading = false
-      hub.sitesReady()
+  Process {
+    id: siteReadProcess
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: hub._siteCacheText = String(text || "")
     }
-    // A miss on the first read is the normal cold-start path: the cache has
-    // not been downloaded yet. Ask for it once and stop, so a download that
-    // keeps producing an unreadable file cannot spin.
-    onLoadFailed: {
-      if (hub._sitesRetried) {
+    onExited: function(exitCode) {
+      if (exitCode === 0) {
+        hub.sites = Model.parseSites(hub._siteCacheText)
+        hub._siteCacheText = ""
+        hub.sitesError = hub.sites.length > 0 ? "" : "The SL stop list came back empty"
         hub.sitesLoading = false
-        hub.sitesError = "Could not read the SL stop list cache"
+        hub.sitesReady()
         return
       }
-      hub._sitesRetried = true
-      hub.ensureSiteCache()
+      hub._siteCacheText = ""
+      // A miss on the first read is the normal cold-start path: the cache has
+      // not been downloaded yet. Ask for it once and stop, so a download that
+      // keeps producing an unreadable file cannot spin.
+      if (exitCode === 2 && !hub._sitesRetried) {
+        hub._sitesRetried = true
+        hub.ensureSiteCache()
+        return
+      }
+      hub.sitesLoading = false
+      hub.sitesError = exitCode === 3
+        ? "Refusing the SL stop list cache (not a regular file, or too large)"
+        : "Could not read the SL stop list cache"
     }
   }
 }
