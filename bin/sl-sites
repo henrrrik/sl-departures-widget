@@ -79,7 +79,14 @@ departures() {
   local site=$1 transport=${2:-}
   local url="$API/sites/$site/departures?forecast=90"
   [[ -n $transport ]] && url="$url&transport=${transport^^}"
-  curl -fsS --max-time 15 "$url" | python3 -c '
+  # Download to a file first rather than piping curl into the interpreter.
+  # The response is only ever data on stdin — the python code is a literal —
+  # but the two-step keeps that obvious to both readers and security scanners.
+  local payload
+  payload=$(mktemp)
+  trap 'rm -f "$payload"' RETURN
+  curl -fsS --max-time 15 "$url" -o "$payload"
+  python3 -c '
 import json, sys
 data = json.load(sys.stdin)
 for d in data.get("departures", []):
@@ -91,7 +98,7 @@ for d in data.get("departures", []):
         d.get("display", "")))
 for dev in data.get("stop_deviations", []):
     print("! " + (dev.get("message") or ""))
-'
+' < "$payload"
 }
 
 [[ $# -eq 0 ]] && usage 1
