@@ -398,15 +398,54 @@ function verticalBarLines(rows, config) {
   return lines
 }
 
+// Everything interpolated into the tooltip markup passes through here.
+// plain() already strips angle brackets from API strings at parse time; this
+// escapes the rest so the markup below stays the only markup there is.
+function escapeHtml(value) {
+  return String(value === undefined || value === null ? "" : value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+}
+
+function nbsp(count) {
+  var out = ""
+  for (var i = 0; i < count; i++) out += "&nbsp;"
+  return out
+}
+
+// The tooltip is rendered by a shell Text in its default AutoText mode: a
+// string leading with a tag is interpreted as StyledText, which allows <b>,
+// <br/> and entities but no tables and no alignment control — and the
+// shell's label centers every line. So the columns are built the terminal
+// way instead: the bar font is a monospace (the mode icons already bet on
+// JetBrainsMono), and &nbsp;-padding every line to the same width makes the
+// centering invisible. The single-line states stay plain strings.
 function tooltipText(rows, config, siteLabel) {
   if (config.siteId <= 0) return "SL Departures — click to pick a stop"
   if (rows.length === 0) return siteLabel + " — no departures"
-  var parts = []
-  for (var i = 0; i < Math.min(rows.length, 5); i++) {
-    var row = rows[i]
-    parts.push(row.line + " " + row.destination + " " + (row.minutes === null ? row.clock : row.waitLabel))
+
+  var lineW = 0, destW = 0, waitW = 0
+  var cells = rows.slice(0, 5).map(function(row) {
+    var cell = { line: row.line, dest: row.destination,
+                 wait: row.minutes === null ? row.clock : row.waitLabel }
+    lineW = Math.max(lineW, cell.line.length)
+    destW = Math.max(destW, cell.dest.length)
+    waitW = Math.max(waitW, cell.wait.length)
+    return cell
+  })
+  var rowW = lineW + 2 + destW + 2 + waitW
+  var totalW = Math.max(rowW, siteLabel.length)
+
+  var out = ["<b>" + escapeHtml(siteLabel) + "</b>" + nbsp(totalW - siteLabel.length)]
+  for (var i = 0; i < cells.length; i++) {
+    var c = cells[i]
+    out.push("<b>" + escapeHtml(c.line) + "</b>" + nbsp(lineW - c.line.length + 2)
+      + escapeHtml(c.dest) + nbsp(destW - c.dest.length + 2)
+      + nbsp(waitW - c.wait.length) + escapeHtml(c.wait)
+      + nbsp(totalW - rowW))
   }
-  return siteLabel + "\n" + parts.join("\n")
+  return out.join("<br/>")
 }
 
 // A one-line summary of what the widget is currently showing, for the popup
