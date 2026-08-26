@@ -111,15 +111,25 @@ Panel {
       shell.mutateShellConfig(function(config) {
         if (!config.bar || !config.bar.layout) return
         var sections = ["left", "center", "right"]
+        var fallback = null
         for (var s = 0; s < sections.length; s++) {
           var arr = config.bar.layout[sections[s]] || []
           for (var i = 0; i < arr.length; i++) {
             if (!arr[i] || String(arr[i].id) !== root.moduleName) continue
-            if (root.entryFingerprint(arr[i]) !== oldFingerprint) continue
-            arr[i] = entry
-            return
+            if (root.entryFingerprint(arr[i]) === oldFingerprint) {
+              arr[i] = entry
+              return
+            }
+            if (!fallback) fallback = { arr: arr, index: i }
           }
         }
+        // The runtime settings can differ from the raw on-disk entry (the
+        // shell hands them over with manifest defaults merged in), so an
+        // exact fingerprint match can miss every entry. Repointing the first
+        // id match then beats silently dropping the write — worst case, with
+        // several differing instances, the wrong one is repointed; without
+        // this, the picked stop evaporates on restart.
+        if (fallback) fallback.arr[fallback.index] = entry
       })
     } else if (shell && typeof shell.updateEntryInline === "function") {
       shell.updateEntryInline(root.moduleName, entry)

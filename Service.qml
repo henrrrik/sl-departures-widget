@@ -38,6 +38,7 @@ Item {
   property string resolvedSiteName: ""
 
   property string _url: ""
+  property int _subToken: 0
 
   function refresh() {
     if (_url !== "") SlHub.requestNow(_url)
@@ -54,8 +55,11 @@ Item {
       fetchState = e.error !== "" ? "error" : "loading"
       return
     }
-    rows = Model.filterRows(Model.toRows(e.departures, Date.now() + e.clockOffset), config)
-    stopDeviations = e.stopDeviations
+    // Most ticks change nothing on the board; reassigning `rows` anyway would
+    // make the Repeater tear down and rebuild every delegate each time.
+    var next = Model.filterRows(Model.toRows(e.departures, Date.now() + e.clockOffset), config)
+    if (!Model.sameRows(rows, next)) rows = next
+    if (stopDeviations !== e.stopDeviations) stopDeviations = e.stopDeviations
     lastUpdated = e.lastUpdated
     fetchState = "ready"
   }
@@ -69,9 +73,21 @@ Item {
   function applyConfig() {
     var url = config.siteId > 0 ? Model.departuresUrl(config) : ""
     if (url !== _url) {
-      if (_url !== "") SlHub.unsubscribe(_url)
+      if (_url !== "") SlHub.unsubscribe(_url, _subToken)
       _url = url
-      if (_url !== "") SlHub.subscribe(_url, config.refreshIntervalSec)
+      _subToken = _url !== "" ? SlHub.subscribe(_url, config.refreshIntervalSec) : 0
+      // The rows on screen were derived from the old URL's payload; keeping
+      // them under the new stop's name until the new fetch lands (or fails)
+      // would present another stop's times as current. Drop them so the
+      // loading and error states can surface.
+      if (rows.length > 0) rows = []
+      if (stopDeviations.length > 0) stopDeviations = []
+      lastUpdated = 0
+      resolvedSiteName = ""
+    } else if (_url !== "") {
+      // Same URL, but the interval is not part of it — re-declare it so an
+      // edit to refreshIntervalSec alone still reaches the hub.
+      SlHub.updateInterval(_url, _subToken, config.refreshIntervalSec)
     }
 
     if (config.siteId <= 0) {
@@ -89,7 +105,7 @@ Item {
   }
 
   Component.onCompleted: Qt.callLater(applyConfig)
-  Component.onDestruction: if (_url !== "") SlHub.unsubscribe(_url)
+  Component.onDestruction: if (_url !== "") SlHub.unsubscribe(_url, _subToken)
 
   Connections {
     target: SlHub

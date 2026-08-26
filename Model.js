@@ -112,10 +112,6 @@ function departuresUrl(config) {
   return API_BASE + "/sites/" + config.siteId + "/departures?" + query.join("&")
 }
 
-function sitesUrl() {
-  return API_BASE + "/sites?expand=false"
-}
-
 // -------------------------------------------------------------------- time
 
 // Departure timestamps are naive Europe/Stockholm wall-clock times, so
@@ -127,7 +123,11 @@ function sitesUrl() {
 //
 // Returns the offset to add to Date.now() to land in the API's frame, or null
 // when the payload carries no relative display to anchor on — the caller then
-// keeps whatever offset it learned last.
+// keeps whatever offset it learned last. A stop whose departures are far
+// enough out that every display is a clock time ("23:45") never yields a
+// sample, so such a stop never anchors and runs on the nowMs() fallback —
+// exact on machines with a working zone conversion or set to Stockholm time,
+// off by the timezone difference elsewhere.
 function clockOffset(departures, wallNow) {
   var samples = []
   for (var i = 0; i < (departures || []).length; i++) {
@@ -161,14 +161,24 @@ function saneClockOffset(offset) {
 function nowMs() {
   var real = new Date()
   try {
-    var stamp = String(real.toLocaleString("sv-SE", { timeZone: TIMEZONE })).replace(" ", "T")
-    var parsed = parseNaive(stamp)
-    // Reject anything absurd: QML replaces Date.prototype.toLocaleString with
-    // Qt's own overload, which ignores the options object entirely.
-    if (parsed !== null && Math.abs(parsed - real.getTime()) < 14 * 3600 * 1000) return parsed
+    // QML replaces Date.prototype.toLocaleString with Qt's own overload,
+    // which ignores the options object entirely — and its output can still
+    // parse below, passing itself off as a Stockholm conversion. Probing with
+    // two different zones exposes that: Stockholm is never at UTC+0, so a
+    // working implementation always disagrees with UTC, while an ignored
+    // option yields the same string twice.
+    var stockholm = String(real.toLocaleString("sv-SE", { timeZone: TIMEZONE }))
+    if (stockholm !== String(real.toLocaleString("sv-SE", { timeZone: "UTC" }))) {
+      var parsed = parseNaive(stockholm.replace(" ", "T"))
+      // The sanity bound still applies: a format parseNaive misreads should
+      // not be able to sling the clock further than a timezone can.
+      if (parsed !== null && Math.abs(parsed - real.getTime()) < 14 * 3600 * 1000) return parsed
+    }
   } catch (e) {
-    // No Intl, no tz database — the machine clock it is.
+    // No Intl, no tz database.
   }
+  // The machine clock — right for the Stockholm-based machines this widget is
+  // for, off by the timezone difference elsewhere.
   return real.getTime()
 }
 
@@ -323,6 +333,21 @@ function filterRows(rows, config) {
   return out
 }
 
+// Whether two row lists render identically, over exactly the fields the UI
+// (rows, bar label, tooltip) actually displays. Lets recompute() skip the
+// rows reassignment on the many ticks that change nothing.
+function sameRows(a, b) {
+  if (!a || !b || a.length !== b.length) return false
+  for (var i = 0; i < a.length; i++) {
+    var x = a[i]
+    var y = b[i]
+    if (x.key !== y.key || x.minutesText !== y.minutesText || x.clock !== y.clock
+      || x.display !== y.display || x.cancelled !== y.cancelled
+      || x.deviationText !== y.deviationText || x.deviationLevel !== y.deviationLevel) return false
+  }
+  return true
+}
+
 // The bar shows what you can actually board, so cancellations are dropped
 // here; the popup still lists them, struck through, because a cancellation is
 // exactly the thing you open the popup to find out about.
@@ -331,15 +356,18 @@ function barRows(rows, config) {
   return boardable.slice(0, config.barCount)
 }
 
+// One pass with a replacer function, not a chain of string replaces: row
+// fields come from the API, and as replacement strings their $-sequences
+// ($&, $$, …) would be expanded — and a field containing a {token} handled
+// later in a chain would itself be substituted.
 function formatSegment(template, row) {
+  var fields = {
+    line: row.line, wait: row.waitText, min: row.minutesText, clock: row.clock,
+    display: row.display, destination: row.destination, icon: row.icon
+  }
   return String(template)
-    .replace(/\{line\}/g, row.line)
-    .replace(/\{wait\}/g, row.waitText)
-    .replace(/\{min\}/g, row.minutesText)
-    .replace(/\{clock\}/g, row.clock)
-    .replace(/\{display\}/g, row.display)
-    .replace(/\{destination\}/g, row.destination)
-    .replace(/\{icon\}/g, row.icon)
+    .replace(/\{(line|wait|min|clock|display|destination|icon)\}/g,
+      function(match, key) { return fields[key] })
     .replace(/^\s+|\s+$/g, "")
 }
 

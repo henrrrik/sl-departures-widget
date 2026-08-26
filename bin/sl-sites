@@ -6,7 +6,9 @@
 #   sl-sites --departures 9192 [transport]
 #
 # The stop list is cached in ~/.cache/omarchy/sl-sites.json and shared with
-# the widget, which refreshes it weekly on its own.
+# the widget. The widget drives the cache through this same script (the
+# --ensure-cache and --read-cache maintenance flags below), so the download
+# and the hardened read exist exactly once for both consumers.
 
 set -euo pipefail
 
@@ -54,33 +56,61 @@ ensure_cache() {
   fi
 }
 
+# Reads the cache to stdout through one file descriptor: O_NOFOLLOW refuses
+# symlinks, fstat on that same descriptor confirms a regular file under the
+# size cap, and the read itself is bounded by the cap — nothing between check
+# and read can swap the file out, and an oversized or planted cache never
+# reaches a consumer. Exit codes: 2 = missing (the normal cold start),
+# 3 = refused (symlink, not regular, or too large). The widget calls this via
+# --read-cache; search() below goes through it too.
+read_cache() {
+  python3 -c '
+import os, stat, sys
+cap = 8 * 1024 * 1024
+try:
+    fd = os.open(sys.argv[1], os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+except FileNotFoundError:
+    sys.exit(2)
+except OSError:
+    sys.exit(3)
+st = os.fstat(fd)
+if not stat.S_ISREG(st.st_mode) or st.st_size > cap:
+    os.close(fd)
+    sys.exit(3)
+with os.fdopen(fd, "rb") as fh:
+    sys.stdout.buffer.write(fh.read(cap))
+' "$CACHE"
+}
+
 search() {
   ensure_cache
+  local data
+  data=$(mktemp)
+  trap 'rm -f -- "$data"' RETURN
+  read_cache > "$data" || die "refusing the stop list cache (missing, not a regular file, or too large)"
+  # The guards mirror Model.js parseSites: the cache is shared and writable by
+  # both consumers, so a payload of the wrong shape gets a message, not a
+  # traceback.
   python3 -c '
-import json, os, stat, sys, unicodedata
+import json, sys, unicodedata
 
 def fold(s):
-    return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
+    return unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode().lower()
 
-def bounded_read(path, cap=8 * 1024 * 1024):
-    try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
-    except OSError:
-        sys.exit("refusing the stop list cache (unreadable, or a symlink)")
-    st = os.fstat(fd)
-    if not stat.S_ISREG(st.st_mode) or st.st_size > cap:
-        os.close(fd)
-        sys.exit("refusing the stop list cache (not a regular file, or too large)")
-    with os.fdopen(fd, "rb") as fh:
-        return fh.read(cap)
+try:
+    sites = json.load(sys.stdin)
+except ValueError:
+    sys.exit("the stop list cache is not JSON — try --refresh")
+if not isinstance(sites, list):
+    sys.exit("the stop list cache is not a list — try --refresh")
 
-needle = fold(sys.argv[2])
-sites = json.loads(bounded_read(sys.argv[1]).decode("utf-8"))
-
+needle = fold(sys.argv[1])
 hits = []
 for site in sites:
-    name = site.get("name") or ""
-    note = site.get("note") or ""
+    if not isinstance(site, dict) or not isinstance(site.get("id"), int):
+        continue
+    name = str(site.get("name") or "")
+    note = str(site.get("note") or "")
     at = fold(name).find(needle)
     if at == -1:
         if needle not in fold(note):
@@ -89,11 +119,11 @@ for site in sites:
     hits.append((at, len(name), name, note, site["id"]))
 
 if not hits:
-    sys.exit("no stop matches " + sys.argv[2])
+    sys.exit("no stop matches " + sys.argv[1])
 
 for _, _, name, note, sid in sorted(hits)[:40]:
     print("%-8d %s%s" % (sid, name, "  (%s)" % note if note else ""))
-' "$CACHE" "$1"
+' "$1" < "$data"
 }
 
 departures() {
@@ -110,16 +140,29 @@ departures() {
   [[ $(stat -c %s -- "$payload") -le 4194304 ]] || die "departures response larger than expected, refusing"
   python3 -c '
 import json, sys
-data = json.load(sys.stdin)
-for d in data.get("departures", []):
-    line = d.get("line", {})
+try:
+    data = json.load(sys.stdin)
+except ValueError:
+    sys.exit("unreadable response from SL")
+if not isinstance(data, dict):
+    sys.exit("unexpected response shape from SL")
+deps = data.get("departures")
+for d in deps if isinstance(deps, list) else []:
+    if not isinstance(d, dict):
+        continue
+    line = d.get("line")
+    if not isinstance(line, dict):
+        line = {}
     print("%-6s %-5s %-28s %s" % (
-        line.get("transport_mode", ""),
-        line.get("designation", ""),
-        (d.get("destination") or "")[:28],
-        d.get("display", "")))
-for dev in data.get("stop_deviations", []):
-    print("! " + (dev.get("message") or ""))
+        line.get("transport_mode") or "",
+        line.get("designation") or "",
+        str(d.get("destination") or "")[:28],
+        d.get("display") or ""))
+devs = data.get("stop_deviations")
+for dev in devs if isinstance(devs, list) else []:
+    if not isinstance(dev, dict):
+        continue
+    print("! " + str(dev.get("message") or ""))
 ' < "$payload"
 }
 
@@ -129,6 +172,10 @@ case $1 in
   -h|--help) usage ;;
   --refresh) fetch_sites; printf 'Cached %s\n' "$CACHE" ;;
   --departures) shift; [[ $# -ge 1 ]] || die "--departures needs a site id"; departures "$@" ;;
+  # Maintenance mode for the widget (SlHub.qml), which shares the cache and
+  # this script's download/read protocol rather than carrying its own copy.
+  --ensure-cache) ensure_cache ;;
+  --read-cache) read_cache ;;
   -*) die "unknown option: $1" ;;
   *) search "$1" ;;
 esac

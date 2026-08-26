@@ -17,11 +17,12 @@ import "Model.js" as Model
 Item {
   id: hub
 
-  // url -> { refCount, intervalMs, nextDue, departures, stopDeviations,
+  // url -> { subs, intervalMs, nextDue, departures, stopDeviations,
   //          hasPayload, lastUpdated, clockOffset, clockAnchored, error,
   //          fetching, queued }
   property var _entries: ({})
   property var _queue: []
+  property int _nextToken: 1
 
   signal updated(string url)
   signal fetchingChanged(string url)
@@ -30,28 +31,65 @@ Item {
     return _entries[url] || null
   }
 
-  // The merged interval is the smallest any subscriber asked for, and stays
-  // there after that subscriber leaves. Recomputing the true minimum would
-  // need a per-subscriber registry; a sticky floor of 15s is close enough.
+  // Subscriptions are tokened so each subscriber's interval is known
+  // individually: the merged interval is the true minimum across live
+  // subscribers, and recovers when the tightest subscriber leaves or relaxes
+  // (updateInterval below) instead of sticking at the smallest value ever asked.
   function subscribe(url, intervalSec) {
     var e = _entries[url]
     if (!e) {
-      e = { refCount: 0, intervalMs: 0, nextDue: 0, departures: [], stopDeviations: [],
+      e = { subs: {}, intervalMs: 0, nextDue: 0, departures: [], stopDeviations: [],
             hasPayload: false, lastUpdated: 0, clockOffset: 0, clockAnchored: false,
             error: "", fetching: false, queued: false }
       _entries[url] = e
     }
-    e.refCount++
-    var ms = Math.max(15, intervalSec) * 1000
-    e.intervalMs = e.intervalMs === 0 ? ms : Math.min(e.intervalMs, ms)
+    var token = _nextToken++
+    e.subs[token] = Math.max(15, intervalSec) * 1000
+    _remergeInterval(e)
     scheduler.running = true
     if (!e.hasPayload) requestNow(url)
-    return e
+    return token
   }
 
-  function unsubscribe(url) {
+  // Re-declares one subscriber's interval. The interval is not part of the
+  // departures URL, so a config edit that changes only refreshIntervalSec
+  // arrives through here rather than through a resubscribe.
+  function updateInterval(url, token, intervalSec) {
     var e = _entries[url]
-    if (e) e.refCount = Math.max(0, e.refCount - 1)
+    if (!e || e.subs[token] === undefined) return
+    e.subs[token] = Math.max(15, intervalSec) * 1000
+    _remergeInterval(e)
+  }
+
+  function unsubscribe(url, token) {
+    var e = _entries[url]
+    if (!e) return
+    delete e.subs[token]
+    if (Object.keys(e.subs).length > 0) {
+      _remergeInterval(e)
+      return
+    }
+    // Last subscriber gone: drop the entry, or every URL ever subscribed
+    // would keep its parsed payload (and its slot in the scheduler loop) for
+    // the life of the shell process. A fetch already in flight for this URL
+    // finds no entry in maybeFinish and discards its result.
+    delete _entries[url]
+    var at = _queue.indexOf(url)
+    if (at !== -1) _queue.splice(at, 1)
+  }
+
+  // The merged interval is the minimum across subscribers. On a tightening,
+  // nextDue is pulled in against the payload's age, so a new 15s subscriber
+  // is not left waiting out the remainder of a previous 600s lap.
+  function _remergeInterval(e) {
+    var min = 0
+    for (var token in e.subs) {
+      var ms = e.subs[token]
+      if (min === 0 || ms < min) min = ms
+    }
+    e.intervalMs = min
+    if (min > 0 && e.nextDue > 0)
+      e.nextDue = Math.min(e.nextDue, (e.lastUpdated > 0 ? e.lastUpdated : Date.now()) + min)
   }
 
   function requestNow(url) {
@@ -74,7 +112,7 @@ Item {
   property var _exitCode: null
 
   function pump() {
-    if (fetchProcess.running || watchdog.running || _queue.length === 0) return
+    if (fetchProcess.running || watchdog.running || settle.running || _queue.length === 0) return
     var url = _queue.shift()
     var e = _entries[url]
     if (!e) { pump(); return }
@@ -168,7 +206,27 @@ Item {
       if (hub._exitCode === null) hub._exitCode = -1
       if (hub._stdoutText === null) hub._stdoutText = ""
       if (hub._stderrText === null) hub._stderrText = "Fetch timed out"
+      // The killed process's own exit/stream signals can still arrive after
+      // this forced completion; started straight away, the next fetch would
+      // share the three slots with them and could apply a mix of the two
+      // runs. Hold the queue while they drain (settle below).
+      settle.restart()
       hub.maybeFinish()
+    }
+  }
+
+  // Absorbs the abandoned run's late signals: anything landing in the shared
+  // _exitCode/_stdoutText/_stderrText slots before this fires belongs to the
+  // killed fetch (maybeFinish ignores it — _activeUrl is already empty), and
+  // the slots are wiped before the queue moves on.
+  Timer {
+    id: settle
+    interval: 1500
+    onTriggered: {
+      hub._exitCode = null
+      hub._stdoutText = null
+      hub._stderrText = null
+      hub.pump()
     }
   }
 
@@ -183,7 +241,6 @@ Item {
       var anyLive = false
       for (var url in hub._entries) {
         var e = hub._entries[url]
-        if (e.refCount <= 0) continue
         anyLive = true
         if (!e.fetching && !e.queued && now >= e.nextDue) hub.requestNow(url)
       }
@@ -202,7 +259,15 @@ Item {
   property string sitesError: ""
   property bool _sitesRetried: false
   property string _siteCacheText: ""
-  readonly property string sitesCachePath: Quickshell.env("HOME") + "/.cache/omarchy/sl-sites.json"
+
+  // The cache download and the hardened cache read (O_NOFOLLOW, fstat, size
+  // cap) live in bin/sl-sites, which ships alongside this file; the widget
+  // and the CLI govern the shared cache with one audited protocol instead of
+  // two hand-synced copies.
+  readonly property string _slSitesBin: {
+    var url = Qt.resolvedUrl("bin/sl-sites").toString()
+    return url.indexOf("file://") === 0 ? decodeURIComponent(url.substring(7)) : url
+  }
 
   signal sitesReady()
 
@@ -214,29 +279,10 @@ Item {
     readSiteCache()
   }
 
-  // Reads the cache through one file descriptor: O_NOFOLLOW refuses symlinks,
-  // fstat on that same descriptor confirms a regular file under the size cap,
-  // and the read itself is bounded by the cap — nothing between check and
-  // read can swap the file out, and an oversized or planted cache never
-  // reaches the long-running shell process. Exit codes: 2 = missing (the
-  // normal cold start), 3 = refused (symlink, not regular, or too large).
+  // Exit codes: 2 = missing (the normal cold start), 3 = refused (symlink,
+  // not regular, or too large).
   function readSiteCache() {
-    siteReadProcess.command = ["python3", "-c",
-      "import os, stat, sys\n"
-      + "cap = 8 * 1024 * 1024\n"
-      + "try:\n"
-      + "    fd = os.open(sys.argv[1], os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)\n"
-      + "except FileNotFoundError:\n"
-      + "    sys.exit(2)\n"
-      + "except OSError:\n"
-      + "    sys.exit(3)\n"
-      + "st = os.fstat(fd)\n"
-      + "if not stat.S_ISREG(st.st_mode) or st.st_size > cap:\n"
-      + "    os.close(fd)\n"
-      + "    sys.exit(3)\n"
-      + "with os.fdopen(fd, 'rb') as fh:\n"
-      + "    sys.stdout.buffer.write(fh.read(cap))\n",
-      sitesCachePath]
+    siteReadProcess.command = ["bash", _slSitesBin, "--read-cache"]
     siteReadProcess.running = true
   }
 
@@ -246,18 +292,7 @@ Item {
 
   function ensureSiteCache() {
     if (siteCacheProcess.running) return
-    siteCacheProcess.command = ["bash", "-c",
-      // The staging file comes from mktemp (private, 0600, unpredictable), so
-      // a pre-planted path cannot redirect the write; the download is size-
-      // capped and verified before the atomic rename publishes it.
-      "set -e; cache=\"$1\"; url=\"$2\"; dir=$(dirname -- \"$cache\"); mkdir -p \"$dir\"; "
-      + "if [ ! -s \"$cache\" ] || [ -n \"$(find \"$cache\" -mtime +7 2>/dev/null)\" ]; then "
-      + "  tmp=$(mktemp -- \"$dir/.sl-sites.XXXXXXXX\"); trap 'rm -f -- \"$tmp\"' EXIT; "
-      + "  curl -fsS --max-time 30 --max-filesize 8388608 -o \"$tmp\" -- \"$url\"; "
-      + "  [ \"$(stat -c %s -- \"$tmp\")\" -le 8388608 ]; "
-      + "  mv -f -- \"$tmp\" \"$cache\"; trap - EXIT; "
-      + "fi",
-      "bash", sitesCachePath, Model.sitesUrl()]
+    siteCacheProcess.command = ["bash", _slSitesBin, "--ensure-cache"]
     siteCacheProcess.running = true
   }
 
