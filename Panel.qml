@@ -92,11 +92,17 @@ Panel {
   // that evaporates on restart. Applied locally first so the board switches on
   // the click itself, before the config round-trips through the shell.
   //
-  // The write goes through mutateShellConfig and finds THIS instance's entry
+  // The write prefers mutateShellConfig, which finds THIS instance's entry
   // by comparing settings, not just ids: this widget allows multiple
   // instances, and the shell's updateEntryInline convenience updates every
   // entry with a matching id — picking a stop in one widget would repoint all
   // of them. (Identical entries are interchangeable, so first match is fine.)
+  //
+  // Since Omarchy 4.0.3 a third-party widget talks to a scoped shell facade:
+  // mutateShellConfig is still a function there, but it only writes for
+  // full-bar plugins and answers false for a bar widget. updateEntryInline is
+  // what the facade grants for the widget's own id, so a refused mutation
+  // falls through to it — every same-id instance moves, but the stop sticks.
   function selectSite(site) {
     if (!site) return
     var oldFingerprint = entryFingerprint(root.settings)
@@ -107,8 +113,9 @@ Panel {
 
     root.settings = entry
     var shell = root.bar ? root.bar.shell : null
+    var written = false
     if (shell && typeof shell.mutateShellConfig === "function") {
-      shell.mutateShellConfig(function(config) {
+      written = shell.mutateShellConfig(function(config) {
         if (!config.bar || !config.bar.layout) return
         var sections = ["left", "center", "right"]
         var fallback = null
@@ -130,8 +137,9 @@ Panel {
         // several differing instances, the wrong one is repointed; without
         // this, the picked stop evaporates on restart.
         if (fallback) fallback.arr[fallback.index] = entry
-      })
-    } else if (shell && typeof shell.updateEntryInline === "function") {
+      }) !== false
+    }
+    if (!written && shell && typeof shell.updateEntryInline === "function") {
       shell.updateEntryInline(root.moduleName, entry)
     }
 
