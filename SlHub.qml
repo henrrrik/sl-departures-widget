@@ -24,6 +24,19 @@ Item {
   property var _queue: []
   property int _nextToken: 1
 
+  // Rate-limit backoff. SL's quota is enforced on the caller, not per
+  // endpoint (every URL answers 429 once it trips), so the backoff is
+  // hub-wide: while it runs, no stop fetches. Each consecutive 429 doubles
+  // the wait up to the cap; any successful fetch clears it.
+  readonly property int _backoffFloorMs: 60000
+  readonly property int _backoffCapMs: 600000
+  property int _backoffMs: 0
+  property real _backoffUntil: 0
+
+  function _backingOff() {
+    return Date.now() < _backoffUntil
+  }
+
   signal updated(string url)
   signal fetchingChanged(string url)
 
@@ -95,6 +108,10 @@ Item {
   function requestNow(url) {
     var e = _entries[url]
     if (!e || e.queued || (e.fetching && _activeUrl === url)) return
+    // Manual refreshes included: during a backoff they would only draw
+    // another 429 and push the quota window further out. The scheduler
+    // picks the entry up once the backoff lapses.
+    if (_backingOff()) return
     e.queued = true
     _queue.push(url)
     pump()
@@ -113,6 +130,16 @@ Item {
 
   function pump() {
     if (fetchProcess.running || watchdog.running || settle.running || _queue.length === 0) return
+    if (_backingOff()) {
+      // A 429 landed while other stops were queued behind it. Drop them
+      // rather than stall the queue; the scheduler re-requests them.
+      for (var i = 0; i < _queue.length; i++) {
+        var queued = _entries[_queue[i]]
+        if (queued) queued.queued = false
+      }
+      _queue = []
+      return
+    }
     var url = _queue.shift()
     var e = _entries[url]
     if (!e) { pump(); return }
@@ -159,6 +186,14 @@ Item {
       // The last good departures are kept: a stale board that keeps counting
       // down beats a blank one, and beats one frozen at old minutes.
       var message = String(stderrText || "").replace(/^\s+|\s+$/g, "")
+      // curl -f exits 22 on an HTTP error and names the status on stderr.
+      if (exitCode === 22 && /\b429\b/.test(message)) {
+        _backoffMs = _backoffMs > 0 ? Math.min(_backoffMs * 2, _backoffCapMs) : _backoffFloorMs
+        _backoffUntil = Date.now() + _backoffMs
+        e.error = "SL rate limit reached — retrying in "
+          + Math.round(_backoffMs / 60000) + " min"
+        return
+      }
       e.error = message !== "" ? message : "Could not reach SL (curl " + exitCode + ")"
       return
     }
@@ -167,6 +202,8 @@ Item {
       e.error = parsed.error
       return
     }
+    _backoffMs = 0
+    _backoffUntil = 0
     e.departures = parsed.departures
     e.stopDeviations = parsed.stopDeviations
     e.hasPayload = true

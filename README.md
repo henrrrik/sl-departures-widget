@@ -78,7 +78,9 @@ beyond the Omarchy shell itself.
 
 The board refreshes every 30 seconds and counts down every 15, so the minutes
 stay honest between fetches. A failed refresh leaves the last board on screen
-rather than blanking it.
+rather than blanking it. If SL answers with a rate limit (HTTP 429), the widget
+stops fetching for a minute, doubling the pause on each further 429 up to ten
+minutes, and resumes normally after the next successful fetch.
 
 ## Configuration
 
