@@ -22,6 +22,12 @@ die() { printf '%s\n' "$*" >&2; exit 1; }
 # function-local path is out of scope and `set -u` kills the script), and it
 # never fires on `die` or a `set -e` abort, which leaked the files.
 TEMP_FILES=()
+
+# The widget passes --status with --ensure-cache to have the HTTP status and
+# any Retry-After written to stderr as "SLHTTP <code> <retry-after>", the
+# same line its own departures fetch writes, so it can read a 429 and SL's
+# requested wait from the status rather than from curl's wording.
+CURL_STATUS=()
 cleanup() { (( ${#TEMP_FILES[@]} )) && rm -f -- "${TEMP_FILES[@]}"; return 0; }
 trap cleanup EXIT
 
@@ -53,7 +59,7 @@ fetch_sites() {
   mkdir -p "$dir"
   tmp=$(mktemp -- "$dir/.sl-sites.XXXXXXXX")
   TEMP_FILES+=("$tmp")
-  curl -fsS --max-time 30 --max-filesize 8388608 -o "$tmp" -- "$API/sites?expand=false"
+  curl -fsS --max-time 30 --max-filesize 8388608 "${CURL_STATUS[@]}" -o "$tmp" -- "$API/sites?expand=false"
   [[ $(stat -c %s -- "$tmp") -le 8388608 ]] || die "stop list larger than expected, refusing"
   mv -f -- "$tmp" "$CACHE"
 }
@@ -194,7 +200,9 @@ case $1 in
   --departures) shift; [[ $# -ge 1 ]] || die "--departures needs a site id"; departures "$@" ;;
   # Maintenance mode for the widget (SlHub.qml), which shares the cache and
   # this script's download/read protocol rather than carrying its own copy.
-  --ensure-cache) ensure_cache ;;
+  --ensure-cache)
+    [[ ${2:-} == --status ]] && CURL_STATUS=(-w '%{stderr}SLHTTP %{http_code} %header{retry-after}\n')
+    ensure_cache ;;
   --read-cache) read_cache ;;
   -*) die "unknown option: $1" ;;
   *) search "$1" ;;

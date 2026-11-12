@@ -27,29 +27,89 @@ Item {
   // Rate-limit backoff. SL's quota is enforced on the caller, not per
   // endpoint (every URL answers 429 once it trips), so the backoff is
   // hub-wide: while it runs, no stop fetches and the site list is not
-  // downloaded. Each consecutive 429 doubles the wait up to the cap; any
-  // successful fetch clears it. Between the backoff lapsing and that success
-  // the hub is "recovering" (_backoffMs > 0) and fetches one stop at a time,
-  // so a pile of overdue stops does not burst into a quota still near its
-  // limit.
+  // downloaded. Each consecutive 429 doubles the wait up to the cap, and a
+  // Retry-After from SL lengthens it when it asks for more. Any answer from
+  // SL that is not a 429 clears it. Between the backoff lapsing and that
+  // answer the hub is "recovering" (_backoffMs > 0) and fetches one stop at
+  // a time, so a pile of overdue stops does not burst into a quota still
+  // near its limit.
   readonly property int _backoffFloorMs: 60000
   readonly property int _backoffCapMs: 600000
+  // Retry-After is honored up to this; past it the header is more likely
+  // garbage than a real hour-long ban.
+  readonly property int _retryAfterCapMs: 3600000
   property int _backoffMs: 0
+  // The wait actually set for the current backoff: _backoffMs, or longer
+  // when Retry-After asked for more.
+  property int _backoffWaitMs: 0
   property real _backoffUntil: 0
 
+  // The deadline is wall-clock time, so a clock stepped backwards (an NTP
+  // correction, a manual change) would stretch it by the size of the step.
+  // What is left can never legitimately exceed the wait that was set, so a
+  // longer remainder is clamped back to it.
   function _backingOff() {
-    return Date.now() < _backoffUntil
+    var remaining = _backoffUntil - Date.now()
+    if (remaining <= 0) return false
+    if (remaining > _backoffWaitMs) _backoffUntil = Date.now() + _backoffWaitMs
+    return true
   }
 
-  // curl -f exits 22 on an HTTP error and names the status on stderr; the
-  // site download in bin/sl-sites runs under set -e and so exits 22 too.
-  function _isRateLimited(exitCode, stderrText) {
-    return exitCode === 22 && /\b429\b/.test(String(stderrText || ""))
+  // Every SL call writes its HTTP status and any Retry-After to stderr as
+  // "SLHTTP <code> <retry-after>" (curl --write-out), so a 429 is read from
+  // the status itself rather than from curl's wording of the error. Status
+  // 0 means SL never answered (network down, timeout).
+  function _httpStatus(stderrText) {
+    var m = String(stderrText || "").match(/^SLHTTP (\d{3}) ?(.*)$/m)
+    if (!m) return { code: 0, retryAfterMs: 0 }
+    return { code: parseInt(m[1], 10), retryAfterMs: _parseRetryAfter(m[2]) }
   }
 
-  function _noteRateLimit() {
+  // Retry-After is either delay-seconds or an HTTP date.
+  function _parseRetryAfter(value) {
+    var text = String(value || "").replace(/^\s+|\s+$/g, "")
+    if (text === "") return 0
+    var ms = /^\d+$/.test(text) ? parseInt(text, 10) * 1000 : Date.parse(text) - Date.now()
+    return isFinite(ms) && ms > 0 ? Math.min(ms, _retryAfterCapMs) : 0
+  }
+
+  // The status line is bookkeeping, not an error to show anyone.
+  function _stripStatus(stderrText) {
+    return String(stderrText || "").replace(/^SLHTTP .*$/mg, "").replace(/^\s+|\s+$/g, "")
+  }
+
+  function _isRateLimited(status) {
+    return status.code === 429
+  }
+
+  function _noteRateLimit(status) {
+    var now = Date.now()
+    // A 429 long after the last backoff ended starts a fresh episode; only
+    // 429s close together are consecutive. Between them, network failures
+    // carry no news about the quota either way.
+    if (_backoffMs > 0 && now - _backoffUntil > _backoffCapMs) _backoffMs = 0
     _backoffMs = _backoffMs > 0 ? Math.min(_backoffMs * 2, _backoffCapMs) : _backoffFloorMs
-    _backoffUntil = Date.now() + _backoffMs
+    _backoffWaitMs = Math.max(_backoffMs, status ? status.retryAfterMs : 0)
+    _backoffUntil = now + _backoffWaitMs
+    // Anything queued behind the 429 would only draw another; the scheduler
+    // re-requests it once the backoff lapses.
+    for (var i = 0; i < _queue.length; i++) {
+      var queued = _entries[_queue[i]]
+      if (queued) queued.queued = false
+    }
+    _queue = []
+  }
+
+  // SL answered with something other than a 429, so the quota is not
+  // tripped: the next 429 starts again from the floor. Not while a backoff
+  // is still running, which a request already in flight when it started
+  // (the site download) cannot speak for.
+  function _noteAnswered(status) {
+    if (status.code > 0 && status.code !== 429 && !_backingOff()) {
+      _backoffMs = 0
+      _backoffWaitMs = 0
+      _backoffUntil = 0
+    }
   }
 
   function _minutesUntil(at) {
@@ -171,17 +231,9 @@ Item {
   property var _exitCode: null
 
   function pump() {
+    // No backoff check here: requestNow refuses to queue during one, and
+    // _noteRateLimit empties the queue when one starts.
     if (fetchProcess.running || watchdog.running || settle.running || _queue.length === 0) return
-    if (_backingOff()) {
-      // A 429 landed while other stops were queued behind it. Drop them
-      // rather than stall the queue; the scheduler re-requests them.
-      for (var i = 0; i < _queue.length; i++) {
-        var queued = _entries[_queue[i]]
-        if (queued) queued.queued = false
-      }
-      _queue = []
-      return
-    }
     var url = _queue.shift()
     var e = _entries[url]
     if (!e) { pump(); return }
@@ -196,7 +248,8 @@ Item {
     // this process when it does not. pipefail makes a truncated (i.e. above
     // cap) transfer a failed fetch rather than a silently clipped payload.
     fetchProcess.command = ["bash", "-c",
-      "set -o pipefail; curl -fsS --max-time 10 --max-filesize 4194304 -- \"$1\" | head -c 4194304",
+      "set -o pipefail; curl -fsS --max-time 10 --max-filesize 4194304"
+        + " -w '%{stderr}SLHTTP %{http_code} %header{retry-after}\\n' -- \"$1\" | head -c 4194304",
       "bash", url]
     fetchProcess.running = true
     watchdog.restart()
@@ -216,10 +269,12 @@ Item {
     // Checked before the entry lookup: a 429 for a URL that was unsubscribed
     // mid-fetch still counts against the caller's quota, and must start the
     // backoff before the next stop's fetch goes out.
-    var limited = _isRateLimited(_exitCode, _stderrText)
-    if (limited) _noteRateLimit()
+    var status = _httpStatus(_stderrText)
+    var limited = _isRateLimited(status)
+    if (limited) _noteRateLimit(status)
+    else _noteAnswered(status)
     if (e) {
-      applyResult(e, _exitCode, _stdoutText, _stderrText, limited)
+      applyResult(e, _exitCode, _stdoutText, _stripStatus(_stderrText), limited)
       e.fetching = false
       // A rate-limited entry retries as soon as the backoff allows.
       e.nextDue = limited ? _backoffUntil : Date.now() + (e.intervalMs || 30000)
@@ -240,7 +295,7 @@ Item {
         e.error = "SL rate limit reached"
         return
       }
-      var message = String(stderrText || "").replace(/^\s+|\s+$/g, "")
+      var message = stderrText
       e.error = message !== "" ? message : "Could not reach SL (curl " + exitCode + ")"
       return
     }
@@ -249,8 +304,6 @@ Item {
       e.error = parsed.error
       return
     }
-    _backoffMs = 0
-    _backoffUntil = 0
     e.departures = parsed.departures
     e.stopDeviations = parsed.stopDeviations
     e.hasPayload = true
@@ -328,6 +381,10 @@ Item {
       for (var url in hub._entries) {
         var e = hub._entries[url]
         anyLive = true
+        // nextDue is wall-clock too: after the clock steps backwards, a due
+        // time further out than one interval (or one backoff) is the step,
+        // not a schedule, and would stall the stop by its size.
+        if (e.nextDue - now > Math.max(e.intervalMs || 30000, hub._backoffWaitMs)) e.nextDue = now
         if (!blocked && !e.fetching && !e.queued && now >= e.nextDue) hub.requestNow(url)
       }
       if (!anyLive) scheduler.running = false
@@ -397,7 +454,7 @@ Item {
     _siteCacheExit = null
     _siteCacheStdout = null
     _siteCacheStderr = null
-    siteCacheProcess.command = ["bash", _slSitesBin, "--ensure-cache"]
+    siteCacheProcess.command = ["bash", _slSitesBin, "--ensure-cache", "--status"]
     siteCacheProcess.running = true
   }
 
@@ -415,15 +472,16 @@ Item {
     if (_siteCacheExit === null || _siteCacheStdout === null || _siteCacheStderr === null) return
     var exitCode = _siteCacheExit
     var fetched = /\bfetched\b/.test(_siteCacheStdout)
-    var stderrText = _siteCacheStderr
+    var status = _httpStatus(_siteCacheStderr)
     var background = _siteCacheBackground
     _siteCacheExit = null
     _siteCacheStdout = null
     _siteCacheStderr = null
+    if (!_isRateLimited(status)) _noteAnswered(status)
     if (exitCode !== 0) {
-      var limited = _isRateLimited(exitCode, stderrText)
+      var limited = _isRateLimited(status)
       if (limited) {
-        _noteRateLimit()
+        _noteRateLimit(status)
         _notifyAll()
       }
       if (background) return
