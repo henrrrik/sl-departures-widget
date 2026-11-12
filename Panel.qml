@@ -215,11 +215,44 @@ Panel {
       rowIndex = Math.max(0, visibleRows.length - 1)
   }
 
+  // KeyboardPanel hangs its card at the bar's thickness plus a gap. It asks
+  // the bar for the thickness of this screen through barSizeFor(), which
+  // counts the notch floor that raises a top bar on a notched display. The
+  // facade Omarchy (4.5.0) hands third-party widgets has no barSizeFor(), so
+  // the panel falls back to the plain barSize and opens the card higher than
+  // the built-in panels by the notch floor.
+  //
+  // So: measure the strip this button actually sits in, compare it with the
+  // thickness the panel itself is using (panel.barThickness), and add any
+  // shortfall to the gap. Comparing against the panel rather than the facade
+  // means an upstream fix of any shape (barSizeFor() on the facade, a
+  // per-screen barSize, the panel measuring for itself) closes the shortfall
+  // to 0 and this steps aside. 0 too when the strip cannot be measured
+  // sensibly.
+  property int stripRaise: 0
+
+  function measureStripRaise() {
+    var used = Number(panel.barThickness) || 0
+    if (used <= 0) return 0
+    // The bar strip is the item directly under the bar window's content item.
+    var win = button.QsWindow.window
+    var content = win ? win.contentItem : null
+    if (!content) return 0
+    var item = button
+    while (item && item.parent !== content) item = item.parent
+    if (!item) return 0
+    var raise = Math.round((root.vertical ? item.width : item.height) - used)
+    // Anything outside (0, used] means the strip is not where it was (the
+    // bar's layout changed); better unadjusted than misplaced.
+    return raise > 0 && raise <= used ? raise : 0
+  }
+
   onOpenedChanged: {
     if (!opened) {
       picking = false
       return
     }
+    stripRaise = measureStripRaise()
     cursorActive = false
     rowIndex = 0
     panelFlick.contentY = 0
@@ -302,6 +335,7 @@ Panel {
     focusTarget: root.picking ? searchField : keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(360))
     contentHeight: panel.fittedContentHeight(chromeHeight + bodyColumn.implicitHeight, Style.space(560))
+    gap: Style.gapsOut + root.stripRaise
 
     // Everything the fixed bands occupy around the scrolling body. The anchors
     // below read the same three gaps, so the reservation cannot drift out of
