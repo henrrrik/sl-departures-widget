@@ -11,11 +11,14 @@ src=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 dest="$HOME/.config/omarchy/plugins/$id"
 
 # Mirror the whole checkout minus the repository's own scaffolding, so a new
-# QML file is never left behind by a hand-maintained file list.
+# QML file is never left behind by a hand-maintained file list. Compiled
+# .qmlc/.jsc caches stay behind too: copied over, they are exactly the stale
+# compiled QML the copy is meant to avoid.
 mkdir -p "$dest"
 if command -v rsync >/dev/null; then
   rsync -a --delete \
     --exclude '.git' --exclude '.gitignore' --exclude 'install' --exclude 'README.md' --exclude 'preview.png' \
+    --exclude '*.qmlc' --exclude '*.jsc' \
     "$src/" "$dest/"
 else
   rm -rf "${dest:?}"/*
@@ -25,6 +28,7 @@ else
     esac
     cp -r "$path" "$dest/"
   done
+  find "$dest" \( -name '*.qmlc' -o -name '*.jsc' \) -type f -delete
 fi
 printf 'Installed %s -> %s\n' "$id" "$dest"
 

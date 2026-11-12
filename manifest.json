@@ -96,7 +96,7 @@
       {
         "key": "barFormat",
         "type": "string",
-        "label": "Bar segment template ({line} {wait} {min} {clock} {destination} {icon})",
+        "label": "Bar segment template ({line} {wait} {min} {clock} {display} {destination} {icon})",
         "defaultValue": "{line} {wait}"
       },
       {

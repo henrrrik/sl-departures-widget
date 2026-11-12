@@ -118,7 +118,7 @@ Settings live inline on the widget's entry in `~/.config/omarchy/shell.json`:
 | `panelCount` | `12` | Departures shown in the popup. |
 | `forecastMinutes` | `90` | How far ahead to ask for. |
 | `refreshIntervalSec` | `30` | Seconds between fetches (minimum 15). |
-| `barFormat` | `{line} {wait}` | Template per departure. Tokens: `{line}` `{wait}` (`4′` / `now`) `{min}` (bare number) `{clock}` `{destination}` `{icon}`. |
+| `barFormat` | `{line} {wait}` | Template per departure. Tokens: `{line}` `{wait}` (`4′` / `now`) `{min}` (bare number) `{clock}` `{display}` (SL's own text, frozen at fetch time) `{destination}` `{icon}`. |
 | `showIcon` | `true` | Mode icon in front of the bar label. |
 
 The widget allows multiple instances, so a second entry with a different
