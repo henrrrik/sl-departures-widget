@@ -30,10 +30,13 @@ Panel {
   property double freshnessTick: 0
   readonly property string freshnessText: {
     freshnessTick  // reactive dependency
-    if (service.lastUpdated <= 0) return "r to refresh"
+    // During a rate-limit pause r is refused, so the hint would mislead; the
+    // error line above the board already says when fetching resumes.
+    var hint = service.rateLimited ? "" : "r to refresh"
+    if (service.lastUpdated <= 0) return hint
     var seconds = Math.max(0, Math.round((Date.now() - service.lastUpdated) / 1000))
     var age = seconds < 60 ? seconds + "s ago" : Math.round(seconds / 60) + " min ago"
-    return "Updated " + age + " · r to refresh"
+    return "Updated " + age + (hint !== "" ? " · " + hint : "")
   }
   readonly property var barDepartures: Model.barRows(service.rows, config)
   readonly property string barText: Model.barLabel(barDepartures, config, service.fetchState)

@@ -26,8 +26,12 @@ Item {
 
   // Rate-limit backoff. SL's quota is enforced on the caller, not per
   // endpoint (every URL answers 429 once it trips), so the backoff is
-  // hub-wide: while it runs, no stop fetches. Each consecutive 429 doubles
-  // the wait up to the cap; any successful fetch clears it.
+  // hub-wide: while it runs, no stop fetches and the site list is not
+  // downloaded. Each consecutive 429 doubles the wait up to the cap; any
+  // successful fetch clears it. Between the backoff lapsing and that success
+  // the hub is "recovering" (_backoffMs > 0) and fetches one stop at a time,
+  // so a pile of overdue stops does not burst into a quota still near its
+  // limit.
   readonly property int _backoffFloorMs: 60000
   readonly property int _backoffCapMs: 600000
   property int _backoffMs: 0
@@ -35,6 +39,36 @@ Item {
 
   function _backingOff() {
     return Date.now() < _backoffUntil
+  }
+
+  // curl -f exits 22 on an HTTP error and names the status on stderr; the
+  // site download in bin/sl-sites runs under set -e and so exits 22 too.
+  function _isRateLimited(exitCode, stderrText) {
+    return exitCode === 22 && /\b429\b/.test(String(stderrText || ""))
+  }
+
+  function _noteRateLimit() {
+    _backoffMs = _backoffMs > 0 ? Math.min(_backoffMs * 2, _backoffCapMs) : _backoffFloorMs
+    _backoffUntil = Date.now() + _backoffMs
+  }
+
+  function _minutesUntil(at) {
+    return Math.max(1, Math.ceil((at - Date.now()) / 60000)) + " min"
+  }
+
+  // The backoff blocks every stop, so every subscriber shows it, not only
+  // the one whose fetch drew the 429. The retry time is the later of the
+  // backoff's end and the entry's own next due time, which is when the
+  // scheduler will actually fetch it. Empty when no backoff is running.
+  function rateLimitMessage(url) {
+    if (!_backingOff()) return ""
+    var e = _entries[url]
+    var at = Math.max(_backoffUntil, e ? e.nextDue : 0)
+    return "SL rate limit reached — retrying in " + _minutesUntil(at)
+  }
+
+  function _notifyAll() {
+    for (var url in _entries) updated(url)
   }
 
   signal updated(string url)
@@ -110,8 +144,16 @@ Item {
     if (!e || e.queued || (e.fetching && _activeUrl === url)) return
     // Manual refreshes included: during a backoff they would only draw
     // another 429 and push the quota window further out. The scheduler
-    // picks the entry up once the backoff lapses.
-    if (_backingOff()) return
+    // picks the entry up once the backoff lapses. The updated() lets the
+    // subscriber redraw the rate-limit countdown, so the refused request
+    // still answers with something on screen.
+    if (_backingOff()) {
+      updated(url)
+      return
+    }
+    // Recovering: one fetch in flight at a time until a success clears the
+    // backoff. Refused requests are picked up by the scheduler's next tick.
+    if (_backoffMs > 0 && (_activeUrl !== "" || _queue.length > 0)) return
     e.queued = true
     _queue.push(url)
     pump()
@@ -171,29 +213,34 @@ Item {
     var url = _activeUrl
     var e = _entries[url]
     _activeUrl = ""
+    // Checked before the entry lookup: a 429 for a URL that was unsubscribed
+    // mid-fetch still counts against the caller's quota, and must start the
+    // backoff before the next stop's fetch goes out.
+    var limited = _isRateLimited(_exitCode, _stderrText)
+    if (limited) _noteRateLimit()
     if (e) {
-      applyResult(e, _exitCode, _stdoutText, _stderrText)
+      applyResult(e, _exitCode, _stdoutText, _stderrText, limited)
       e.fetching = false
-      e.nextDue = Date.now() + (e.intervalMs || 30000)
+      // A rate-limited entry retries as soon as the backoff allows.
+      e.nextDue = limited ? _backoffUntil : Date.now() + (e.intervalMs || 30000)
       fetchingChanged(url)
-      updated(url)
+      if (!limited) updated(url)
     }
+    if (limited) _notifyAll()
     pump()
   }
 
-  function applyResult(e, exitCode, stdoutText, stderrText) {
+  function applyResult(e, exitCode, stdoutText, stderrText, limited) {
     if (exitCode !== 0) {
       // The last good departures are kept: a stale board that keeps counting
       // down beats a blank one, and beats one frozen at old minutes.
-      var message = String(stderrText || "").replace(/^\s+|\s+$/g, "")
-      // curl -f exits 22 on an HTTP error and names the status on stderr.
-      if (exitCode === 22 && /\b429\b/.test(message)) {
-        _backoffMs = _backoffMs > 0 ? Math.min(_backoffMs * 2, _backoffCapMs) : _backoffFloorMs
-        _backoffUntil = Date.now() + _backoffMs
-        e.error = "SL rate limit reached — retrying in "
-          + Math.round(_backoffMs / 60000) + " min"
+      if (limited) {
+        // The countdown comes from rateLimitMessage() while the backoff
+        // runs; this stays behind until the retry lands.
+        e.error = "SL rate limit reached"
         return
       }
+      var message = String(stderrText || "").replace(/^\s+|\s+$/g, "")
       e.error = message !== "" ? message : "Could not reach SL (curl " + exitCode + ")"
       return
     }
@@ -276,10 +323,12 @@ Item {
     onTriggered: {
       var now = Date.now()
       var anyLive = false
+      // Nothing can fetch during a backoff; requestNow would only refuse.
+      var blocked = hub._backingOff()
       for (var url in hub._entries) {
         var e = hub._entries[url]
         anyLive = true
-        if (!e.fetching && !e.queued && now >= e.nextDue) hub.requestNow(url)
+        if (!blocked && !e.fetching && !e.queued && now >= e.nextDue) hub.requestNow(url)
       }
       if (!anyLive) scheduler.running = false
     }

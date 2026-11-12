@@ -80,7 +80,9 @@ The board refreshes every 30 seconds and counts down every 15, so the minutes
 stay honest between fetches. A failed refresh leaves the last board on screen
 rather than blanking it. If SL answers with a rate limit (HTTP 429), the widget
 stops fetching for a minute, doubling the pause on each further 429 up to ten
-minutes, and resumes normally after the next successful fetch.
+minutes. Every board shows the pause and when it will retry, and the stop list
+is not downloaded during it. Once the pause ends, stops are fetched one at a
+time until a fetch succeeds, then polling resumes as normal.
 
 ## Configuration
 

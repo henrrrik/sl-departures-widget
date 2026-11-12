@@ -23,6 +23,9 @@ Item {
   property var stopDeviations: []
   property double lastUpdated: 0
   property bool busy: false
+  // True while the hub's rate-limit backoff refuses fetches, manual
+  // refreshes included, so the UI can drop its "r to refresh" hint.
+  property bool rateLimited: false
 
   readonly property int siteId: config.siteId
   readonly property string siteLabel: {
@@ -50,9 +53,13 @@ Item {
     var e = _url !== "" ? SlHub.entry(_url) : null
     if (!e) return
     busy = e.fetching
-    lastError = e.error
+    // A hub-wide rate-limit backoff blocks this stop too, whichever stop's
+    // fetch drew the 429; say so rather than sit silently on "loading".
+    var limited = SlHub.rateLimitMessage(_url)
+    rateLimited = limited !== ""
+    lastError = limited !== "" ? limited : e.error
     if (!e.hasPayload) {
-      fetchState = e.error !== "" ? "error" : "loading"
+      fetchState = lastError !== "" ? "error" : "loading"
       return
     }
     // Most ticks change nothing on the board; reassigning `rows` anyway would
@@ -93,6 +100,7 @@ Item {
     if (config.siteId <= 0) {
       fetchState = "idle"
       lastError = ""
+      rateLimited = false
       resolvedSiteName = ""
       if (rows.length > 0) rows = []
       if (stopDeviations.length > 0) stopDeviations = []
