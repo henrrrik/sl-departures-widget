@@ -89,10 +89,12 @@ Panel {
   function sameIdEntryCount(barConfig) {
     var layout = barConfig && barConfig.layout
     if (!layout) return 2
+    // Every section the layout has, not a fixed list: the bar also has
+    // centerBegin, centerEnd and tray, and may grow more.
     var count = 0
-    var sections = ["left", "center", "right"]
-    for (var s = 0; s < sections.length; s++) {
-      var arr = layout[sections[s]] || []
+    for (var section in layout) {
+      var arr = layout[section]
+      if (!Array.isArray(arr)) continue
       for (var i = 0; i < arr.length; i++)
         if (arr[i] && String(arr[i].id) === root.moduleName) count++
     }
@@ -141,10 +143,10 @@ Panel {
     if (shell && typeof shell.mutateShellConfig === "function") {
       written = shell.mutateShellConfig(function(config) {
         if (!config.bar || !config.bar.layout) return
-        var sections = ["left", "center", "right"]
         var fallback = null
-        for (var s = 0; s < sections.length; s++) {
-          var arr = config.bar.layout[sections[s]] || []
+        for (var section in config.bar.layout) {
+          var arr = config.bar.layout[section]
+          if (!Array.isArray(arr)) continue
           for (var i = 0; i < arr.length; i++) {
             if (!arr[i] || String(arr[i].id) !== root.moduleName) continue
             if (root.entryFingerprint(arr[i]) === oldFingerprint) {
