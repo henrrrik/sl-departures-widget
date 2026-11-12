@@ -376,23 +376,77 @@ Item {
     return Model.searchSites(sites, query, limit)
   }
 
-  function ensureSiteCache() {
+  // The download hits the same SL API as the departures, so it honors the
+  // hub-wide backoff and a 429 from it starts one. Without the guard, every
+  // reopening of the picker on a cold cache would spend quota mid-backoff.
+  //
+  // background: the weekly refresh check that follows a successful read of
+  // an existing cache. It stays silent (the list on screen is still good),
+  // and re-reads only when bin/sl-sites reports it actually downloaded.
+  function ensureSiteCache(background) {
     if (siteCacheProcess.running) return
+    if (_backingOff()) {
+      if (background) return
+      sitesLoading = false
+      sitesError = "SL rate limit reached — try again in " + _minutesUntil(_backoffUntil)
+      return
+    }
+    // A foreground download is itself this process's refresh check.
+    _siteRefreshChecked = true
+    _siteCacheBackground = background === true
+    _siteCacheExit = null
+    _siteCacheStdout = null
+    _siteCacheStderr = null
     siteCacheProcess.command = ["bash", _slSitesBin, "--ensure-cache"]
     siteCacheProcess.running = true
   }
 
+  // Same exit/stream ordering caveat as the departures fetch: the result is
+  // handled once the exit code and both streams have landed.
+  property var _siteCacheExit: null
+  property var _siteCacheStdout: null
+  property var _siteCacheStderr: null
+  property bool _siteCacheBackground: false
+  // Once per shell process: a cache that already exists is checked for age
+  // after it is read, or the weekly refresh would never happen.
+  property bool _siteRefreshChecked: false
+
+  function _siteCacheFinish() {
+    if (_siteCacheExit === null || _siteCacheStdout === null || _siteCacheStderr === null) return
+    var exitCode = _siteCacheExit
+    var fetched = /\bfetched\b/.test(_siteCacheStdout)
+    var stderrText = _siteCacheStderr
+    var background = _siteCacheBackground
+    _siteCacheExit = null
+    _siteCacheStdout = null
+    _siteCacheStderr = null
+    if (exitCode !== 0) {
+      var limited = _isRateLimited(exitCode, stderrText)
+      if (limited) {
+        _noteRateLimit()
+        _notifyAll()
+      }
+      if (background) return
+      sitesLoading = false
+      sitesError = limited
+        ? "SL rate limit reached — try again in " + _minutesUntil(_backoffUntil)
+        : "Could not download the SL stop list"
+      return
+    }
+    if (background ? fetched : sitesLoading) readSiteCache()
+  }
+
   Process {
     id: siteCacheProcess
-    stderr: StdioCollector { waitForEnd: true }
-    onExited: function(exitCode) {
-      if (exitCode !== 0) {
-        hub.sitesLoading = false
-        hub.sitesError = "Could not download the SL stop list"
-        return
-      }
-      if (hub.sitesLoading) hub.readSiteCache()
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: { hub._siteCacheStdout = String(text || ""); hub._siteCacheFinish() }
     }
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: { hub._siteCacheStderr = String(text || ""); hub._siteCacheFinish() }
+    }
+    onExited: function(exitCode) { hub._siteCacheExit = exitCode; hub._siteCacheFinish() }
   }
 
   Process {
@@ -402,21 +456,30 @@ Item {
       onStreamFinished: hub._siteCacheText = String(text || "")
     }
     onExited: function(exitCode) {
+      // A re-read after the background refresh: the list in memory is good,
+      // so a failed or empty re-read keeps it rather than blanking the picker.
+      var refreshing = hub.sites.length > 0
       if (exitCode === 0) {
-        hub.sites = Model.parseSites(hub._siteCacheText)
+        var parsed = Model.parseSites(hub._siteCacheText)
         hub._siteCacheText = ""
+        if (parsed.length > 0 || !refreshing) hub.sites = parsed
         hub.sitesError = hub.sites.length > 0 ? "" : "The SL stop list came back empty"
         hub.sitesLoading = false
         hub.sitesReady()
+        if (!hub._siteRefreshChecked) {
+          hub._siteRefreshChecked = true
+          hub.ensureSiteCache(true)
+        }
         return
       }
       hub._siteCacheText = ""
+      if (refreshing) return
       // A miss on the first read is the normal cold-start path: the cache has
       // not been downloaded yet. Ask for it once and stop, so a download that
       // keeps producing an unreadable file cannot spin.
       if (exitCode === 2 && !hub._sitesRetried) {
         hub._sitesRetried = true
-        hub.ensureSiteCache()
+        hub.ensureSiteCache(false)
         return
       }
       hub.sitesLoading = false

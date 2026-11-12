@@ -514,15 +514,21 @@ function parseSites(raw) {
 // actually has: "sodermalm" reaches Södermalm, "radmans" reaches Rådmansgatan.
 // A table rather than String.normalize("NFKD") — the QML engine's Unicode
 // support is not something to bet the stop picker on.
-var FOLD_FROM = "àáâãäåèéêëìíîïòóôõöøùúûüýÿçñšž"
-var FOLD_TO   = "aaaaaaeeeeiiiioooooouuuuyycnsz"
+// bin/sl-sites carries the same rules in Python; keep the two in step.
+var FOLD_FROM = "àáâãäåèéêëìíîïòóôõöøùúûüýÿçñšžłđ"
+var FOLD_TO   = "aaaaaaeeeeiiiioooooouuuuyycnszld"
 
 function fold(value) {
-  var lower = String(value || "").toLowerCase()
+  // Combining marks are dropped first, so text in decomposed form ("o" plus
+  // U+0308) folds like its precomposed twin.
+  var lower = String(value || "").toLowerCase().replace(/[\u0300-\u036f]/g, "")
   var out = ""
   for (var i = 0; i < lower.length; i++) {
-    var at = FOLD_FROM.indexOf(lower.charAt(i))
-    out += at === -1 ? lower.charAt(i) : FOLD_TO.charAt(at)
+    var ch = lower.charAt(i)
+    if (ch === "æ") { out += "ae"; continue }
+    if (ch === "ß") { out += "ss"; continue }
+    var at = FOLD_FROM.indexOf(ch)
+    out += at === -1 ? ch : FOLD_TO.charAt(at)
   }
   return out
 }

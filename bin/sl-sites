@@ -17,6 +17,14 @@ CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy/sl-sites.json"
 
 die() { printf '%s\n' "$*" >&2; exit 1; }
 
+# Temp files are removed on EXIT, not on function RETURN: a RETURN trap is
+# global, so it fires again on every later function return (where the
+# function-local path is out of scope and `set -u` kills the script), and it
+# never fires on `die` or a `set -e` abort, which leaked the files.
+TEMP_FILES=()
+cleanup() { (( ${#TEMP_FILES[@]} )) && rm -f -- "${TEMP_FILES[@]}"; return 0; }
+trap cleanup EXIT
+
 usage() {
   cat <<'EOF'
 Search SL site ids for the io.github.henrrrik.sl-departures bar widget.
@@ -44,15 +52,18 @@ fetch_sites() {
   dir=$(dirname -- "$CACHE")
   mkdir -p "$dir"
   tmp=$(mktemp -- "$dir/.sl-sites.XXXXXXXX")
-  trap 'rm -f -- "$tmp"' RETURN
+  TEMP_FILES+=("$tmp")
   curl -fsS --max-time 30 --max-filesize 8388608 -o "$tmp" -- "$API/sites?expand=false"
   [[ $(stat -c %s -- "$tmp") -le 8388608 ]] || die "stop list larger than expected, refusing"
   mv -f -- "$tmp" "$CACHE"
 }
 
+# Prints "fetched" when it downloaded, so the widget knows to re-read a list
+# it already has in memory; a fresh cache is left alone and prints nothing.
 ensure_cache() {
   if [[ ! -s $CACHE ]] || [[ -n $(find "$CACHE" -mtime +7 2>/dev/null) ]]; then
     fetch_sites
+    printf 'fetched\n'
   fi
 }
 
@@ -83,10 +94,10 @@ with os.fdopen(fd, "rb") as fh:
 }
 
 search() {
-  ensure_cache
+  ensure_cache >/dev/null
   local data
   data=$(mktemp)
-  trap 'rm -f -- "$data"' RETURN
+  TEMP_FILES+=("$data")
   read_cache > "$data" || die "refusing the stop list cache (missing, not a regular file, or too large)"
   # The guards mirror Model.js parseSites: the cache is shared and writable by
   # both consumers, so a payload of the wrong shape gets a message, not a
@@ -94,8 +105,15 @@ search() {
   python3 -c '
 import json, sys, unicodedata
 
+# The same rules as fold() in Model.js, so the CLI and the picker agree:
+# combining marks dropped, and the letters that do not decompose mapped by
+# hand (an ASCII-ignore would delete them outright, so "ø" matched nothing
+# and an empty needle matched everything).
+EXTRA = str.maketrans({"ø": "o", "ł": "l", "đ": "d", "æ": "ae", "ß": "ss"})
+
 def fold(s):
-    return unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode().lower()
+    decomposed = unicodedata.normalize("NFD", str(s).lower())
+    return "".join(c for c in decomposed if not unicodedata.combining(c)).translate(EXTRA)
 
 try:
     sites = json.load(sys.stdin)
@@ -105,6 +123,8 @@ if not isinstance(sites, list):
     sys.exit("the stop list cache is not a list — try --refresh")
 
 needle = fold(sys.argv[1])
+if needle.strip() == "":
+    sys.exit("search for at least one letter")
 hits = []
 for site in sites:
     if not isinstance(site, dict) or not isinstance(site.get("id"), int):
@@ -135,7 +155,7 @@ departures() {
   # but the two-step keeps that obvious to both readers and security scanners.
   local payload
   payload=$(mktemp)
-  trap 'rm -f "$payload"' RETURN
+  TEMP_FILES+=("$payload")
   curl -fsS --max-time 15 --max-filesize 4194304 -o "$payload" -- "$url"
   [[ $(stat -c %s -- "$payload") -le 4194304 ]] || die "departures response larger than expected, refusing"
   python3 -c '
