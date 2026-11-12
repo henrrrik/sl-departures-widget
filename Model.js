@@ -177,27 +177,40 @@ function nowMs() {
   } catch (e) {
     // No Intl, no tz database.
   }
-  // The machine clock — right for the Stockholm-based machines this widget is
-  // for, off by the timezone difference elsewhere.
-  return real.getTime()
+  // The machine's local wall clock, in the same naive frame as parseNaive —
+  // right for the Stockholm-based machines this widget is for, off by the
+  // timezone difference elsewhere.
+  return real.getTime() - real.getTimezoneOffset() * 60000
 }
 
 // Parses "2026-08-25T23:30:00" as a wall-clock time with no zone applied.
 // Deliberately not `new Date(string)`: engines disagree on whether a
 // seconds-precision ISO string without a zone is local or UTC.
+//
+// The result lives in a "naive wall clock" frame: Stockholm wall time laid
+// out on a UTC axis. Laying it out in the machine's local zone instead would
+// run SL's times through the local DST rules, which cannot represent the
+// repeated hour at the autumn change (02:30 resolves to the first pass, an
+// hour off during the second) or the skipped hour in spring. On a plain UTC
+// axis every wall time exists exactly once, and the anchor below re-learns
+// the frame's offset from the next fetch after a change.
 function parseNaive(value) {
   var m = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/)
   if (!m) return null
-  return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)).getTime()
+  return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0))
 }
 
 // Minutes until a departure, counted against the anchored clock. Timestamps
 // lead because they keep ticking down between fetches; the relative `display`
 // is only a fallback for a payload that somehow omits both times, and is
 // frozen at whatever the last fetch said.
+//
+// Floored, as SL floors its own counts (clockOffset centres its anchor on
+// that assumption): 40 s away reads "now", 4m40s reads 4. Negative once the
+// expected time has passed; toRows drops anything a minute or more gone.
 function departureMinutes(departure, now) {
   var stamp = parseNaive(departure.expected || departure.scheduled)
-  if (stamp !== null) return Math.max(0, Math.round((stamp - now) / 60000))
+  if (stamp !== null) return Math.floor((stamp - now) / 60000)
 
   var display = trim(departure.display)
   var relative = display.match(/^(\d+)\s*min$/i)
@@ -268,9 +281,14 @@ function toRows(departures, now) {
     var d = departures[i] || {}
     var line = d.line || {}
     var minutes = departureMinutes(d, now)
+    // A stale payload (fetches failing, the board kept on screen) ages past
+    // its own departures. Up to a minute late still reads "now" — the vehicle
+    // may well be at the stop — but anything older has left.
+    if (minutes !== null && minutes < -1) continue
+    if (minutes !== null && minutes < 0) minutes = 0
     var deviations = Array.isArray(d.deviations) ? d.deviations : []
     var cancelled = String(d.state || "").toUpperCase() === "CANCELLED"
-      || deviations.some(function(dev) { return String(dev.consequence || "").toUpperCase() === "CANCELLED" })
+      || deviations.some(function(dev) { return String(dev && dev.consequence || "").toUpperCase() === "CANCELLED" })
 
     rows.push({
       key: String(d.journey && d.journey.id ? d.journey.id : i) + ":" + (d.scheduled || i),
@@ -343,6 +361,7 @@ function sameRows(a, b) {
     var y = b[i]
     if (x.key !== y.key || x.minutesText !== y.minutesText || x.clock !== y.clock
       || x.display !== y.display || x.cancelled !== y.cancelled
+      || x.destination !== y.destination || x.berth !== y.berth
       || x.deviationText !== y.deviationText || x.deviationLevel !== y.deviationLevel) return false
   }
   return true
@@ -398,6 +417,16 @@ function verticalBarLines(rows, config) {
   return lines
 }
 
+// Monospace columns, counted in what the font draws rather than in UTF-16
+// units: combining marks (a decomposed "ö") take no column, and a surrogate
+// pair is one character.
+function textWidth(value) {
+  return String(value || "")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\ud800-\udbff][\udc00-\udfff]/g, "x")
+    .length
+}
+
 function pad(count) {
   var out = ""
   for (var i = 0; i < count; i++) out += " "
@@ -417,22 +446,25 @@ function tooltipText(rows, config, siteLabel) {
 
   var lineW = 0, destW = 0, waitW = 0
   var cells = rows.slice(0, 5).map(function(row) {
+    // Cancelled departures stay listed, as in the popup, but say so: an
+    // ordinary wait would advertise a vehicle that is not coming.
     var cell = { line: row.line, dest: row.destination,
-                 wait: row.minutes === null ? row.clock : row.waitLabel }
-    lineW = Math.max(lineW, cell.line.length)
-    destW = Math.max(destW, cell.dest.length)
-    waitW = Math.max(waitW, cell.wait.length)
+                 wait: row.cancelled ? "cancelled"
+                   : (row.minutes === null ? row.clock : row.waitLabel) }
+    lineW = Math.max(lineW, textWidth(cell.line))
+    destW = Math.max(destW, textWidth(cell.dest))
+    waitW = Math.max(waitW, textWidth(cell.wait))
     return cell
   })
   var rowW = lineW + 2 + destW + 2 + waitW
-  var totalW = Math.max(rowW, siteLabel.length)
+  var totalW = Math.max(rowW, textWidth(siteLabel))
 
-  var out = [siteLabel + pad(totalW - siteLabel.length)]
+  var out = [siteLabel + pad(totalW - textWidth(siteLabel))]
   for (var i = 0; i < cells.length; i++) {
     var c = cells[i]
-    out.push(c.line + pad(lineW - c.line.length + 2)
-      + c.dest + pad(destW - c.dest.length + 2)
-      + pad(waitW - c.wait.length) + c.wait
+    out.push(c.line + pad(lineW - textWidth(c.line) + 2)
+      + c.dest + pad(destW - textWidth(c.dest) + 2)
+      + pad(waitW - textWidth(c.wait)) + c.wait
       + pad(totalW - rowW))
   }
   return out.join("\n")
