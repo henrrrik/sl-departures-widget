@@ -261,7 +261,6 @@ Panel {
     fixedHeight: root.vertical ? root.barLines.length * Style.bar.iconSlot : -1
     horizontalMargin: 8.75
     verticalPadding: 8.75
-    tooltipText: root.opened ? "" : Model.tooltipText(service.rows, root.config, service.siteLabel)
     dimmed: service.fetchState === "loading" && service.rows.length === 0
 
     onPressed: function(b) {

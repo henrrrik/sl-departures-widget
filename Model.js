@@ -417,59 +417,6 @@ function verticalBarLines(rows, config) {
   return lines
 }
 
-// Monospace columns, counted in what the font draws rather than in UTF-16
-// units: combining marks (a decomposed "ö") take no column, and a surrogate
-// pair is one character.
-function textWidth(value) {
-  return String(value || "")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[\ud800-\udbff][\udc00-\udfff]/g, "x")
-    .length
-}
-
-function pad(count) {
-  var out = ""
-  for (var i = 0; i < count; i++) out += " "
-  return out
-}
-
-// The tooltip is rendered by a shell Text in PlainText mode (Omarchy 4.0.2
-// and later), so there is no markup to lean on: no bold, no entities, and no
-// alignment control — and the shell's label centers every line. So the
-// columns are built the terminal way instead: the bar font is a monospace
-// (the mode icons already bet on JetBrainsMono), and space-padding every line
-// to the same width makes the centering invisible. The single-line states
-// stay plain strings.
-function tooltipText(rows, config, siteLabel) {
-  if (config.siteId <= 0) return "SL Departures — click to pick a stop"
-  if (rows.length === 0) return siteLabel + " — no departures"
-
-  var lineW = 0, destW = 0, waitW = 0
-  var cells = rows.slice(0, 5).map(function(row) {
-    // Cancelled departures stay listed, as in the popup, but say so: an
-    // ordinary wait would advertise a vehicle that is not coming.
-    var cell = { line: row.line, dest: row.destination,
-                 wait: row.cancelled ? "cancelled"
-                   : (row.minutes === null ? row.clock : row.waitLabel) }
-    lineW = Math.max(lineW, textWidth(cell.line))
-    destW = Math.max(destW, textWidth(cell.dest))
-    waitW = Math.max(waitW, textWidth(cell.wait))
-    return cell
-  })
-  var rowW = lineW + 2 + destW + 2 + waitW
-  var totalW = Math.max(rowW, textWidth(siteLabel))
-
-  var out = [siteLabel + pad(totalW - textWidth(siteLabel))]
-  for (var i = 0; i < cells.length; i++) {
-    var c = cells[i]
-    out.push(c.line + pad(lineW - textWidth(c.line) + 2)
-      + c.dest + pad(destW - textWidth(c.dest) + 2)
-      + pad(waitW - textWidth(c.wait)) + c.wait
-      + pad(totalW - rowW))
-  }
-  return out.join("\n")
-}
-
 // A one-line summary of what the widget is currently showing, for the popup
 // header: the filters in force, not just the stop name.
 function filterSummary(config) {
