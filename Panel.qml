@@ -81,6 +81,24 @@ Panel {
 
   // Key-sorted copy of a layout entry minus its id, so two entries can be
   // compared for identity regardless of key order.
+  // Shown in the popup when a picked stop could not be saved (selectSite).
+  property string saveNotice: ""
+
+  // How many bar layout entries carry this widget's id. Unknown layouts count
+  // as "many" so an unreadable config never lets a wholesale write through.
+  function sameIdEntryCount(barConfig) {
+    var layout = barConfig && barConfig.layout
+    if (!layout) return 2
+    var count = 0
+    var sections = ["left", "center", "right"]
+    for (var s = 0; s < sections.length; s++) {
+      var arr = layout[sections[s]] || []
+      for (var i = 0; i < arr.length; i++)
+        if (arr[i] && String(arr[i].id) === root.moduleName) count++
+    }
+    return count
+  }
+
   function entryFingerprint(entry) {
     var keys = []
     for (var key in entry) if (key !== "id") keys.push(key)
@@ -101,12 +119,15 @@ Panel {
   // entry with a matching id — picking a stop in one widget would repoint all
   // of them. (Identical entries are interchangeable, so first match is fine.)
   //
-  // Since Omarchy 4.0.3 a third-party widget talks to a scoped shell facade:
-  // mutateShellConfig is still a function there, but it only writes for
-  // full-bar plugins and answers false for a bar widget. updateEntryInline is
-  // what the facade grants for the widget's own id, so a refused mutation
-  // falls through to it — every same-id instance moves, but the stop sticks.
-  function selectSite(site) {
+  // Since Omarchy 4.0.3 (still so in 4.5.0) a third-party widget talks to a
+  // scoped shell facade: mutateShellConfig is still a function there, but it
+  // only writes for full-bar plugins and answers false for a bar widget.
+  // updateEntryInline is what the facade grants for the widget's own id, so a
+  // refused mutation falls through to it — guarded below, because it rewrites
+  // every same-id entry.
+  // quiet: an automatic name-to-id resolution, which repeats each start anyway
+  // and so needs no notice when it cannot be saved.
+  function selectSite(site, quiet) {
     if (!site) return
     var oldFingerprint = entryFingerprint(root.settings)
     var entry = { id: root.moduleName }
@@ -142,8 +163,15 @@ Panel {
         if (fallback) fallback.arr[fallback.index] = entry
       }) !== false
     }
+    // updateEntryInline replaces EVERY same-id entry wholesale with these
+    // settings, so with a second instance configured it would overwrite that
+    // instance's stop, filters and format too. Only fall back to it when this
+    // is the sole entry; otherwise the pick holds for this session only.
+    saveNotice = ""
     if (!written && shell && typeof shell.updateEntryInline === "function") {
-      shell.updateEntryInline(root.moduleName, entry)
+      if (sameIdEntryCount(shell.barConfig) <= 1) shell.updateEntryInline(root.moduleName, entry)
+      else if (!quiet) saveNotice = "Stop applies until restart: several SL widgets are configured, "
+        + "and Omarchy can only save all of them at once. Set siteId in shell.json to keep it."
     }
 
     cancelPicking()
@@ -217,7 +245,7 @@ Panel {
     // site list lands, so the next start skips the lookup entirely.
     onSiteResolved: function(siteId, name) {
       if (root.config.siteId > 0 || root.config.siteName === "") return
-      root.selectSite({ id: siteId, name: root.config.siteName })
+      root.selectSite({ id: siteId, name: root.config.siteName }, true)
     }
   }
 
@@ -461,6 +489,18 @@ Panel {
             width: parent.width
             text: service.lastError
             color: root.urgent
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+          }
+
+          Text {
+
+            textFormat: Text.PlainText
+            visible: !root.picking && root.saveNotice !== ""
+            width: parent.width
+            text: root.saveNotice
+            color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
             wrapMode: Text.WordWrap
