@@ -35,9 +35,6 @@ Item {
   // near its limit.
   readonly property int _backoffFloorMs: 60000
   readonly property int _backoffCapMs: 600000
-  // Retry-After is honored up to this; past it the header is more likely
-  // garbage than a real hour-long ban.
-  readonly property int _retryAfterCapMs: 3600000
   property int _backoffMs: 0
   // The wait actually set for the current backoff: _backoffMs, or longer
   // when Retry-After asked for more.
@@ -55,27 +52,11 @@ Item {
     return true
   }
 
-  // Every SL call writes its HTTP status and any Retry-After to stderr as
-  // "SLHTTP <code> <retry-after>" (curl --write-out), so a 429 is read from
-  // the status itself rather than from curl's wording of the error. Status
-  // 0 means SL never answered (network down, timeout).
+  // Every SL call writes its HTTP status and any Retry-After to stderr
+  // (Model.parseHttpStatus has the format), so a 429 is read from the status
+  // itself rather than from curl's wording of the error.
   function _httpStatus(stderrText) {
-    var m = String(stderrText || "").match(/^SLHTTP (\d{3}) ?(.*)$/m)
-    if (!m) return { code: 0, retryAfterMs: 0 }
-    return { code: parseInt(m[1], 10), retryAfterMs: _parseRetryAfter(m[2]) }
-  }
-
-  // Retry-After is either delay-seconds or an HTTP date.
-  function _parseRetryAfter(value) {
-    var text = String(value || "").replace(/^\s+|\s+$/g, "")
-    if (text === "") return 0
-    var ms = /^\d+$/.test(text) ? parseInt(text, 10) * 1000 : Date.parse(text) - Date.now()
-    return isFinite(ms) && ms > 0 ? Math.min(ms, _retryAfterCapMs) : 0
-  }
-
-  // The status line is bookkeeping, not an error to show anyone.
-  function _stripStatus(stderrText) {
-    return String(stderrText || "").replace(/^SLHTTP .*$/mg, "").replace(/^\s+|\s+$/g, "")
+    return Model.parseHttpStatus(stderrText, Date.now())
   }
 
   function _isRateLimited(status) {
@@ -274,7 +255,7 @@ Item {
     if (limited) _noteRateLimit(status)
     else _noteAnswered(status)
     if (e) {
-      applyResult(e, _exitCode, _stdoutText, _stripStatus(_stderrText), limited)
+      applyResult(e, _exitCode, _stdoutText, Model.stripHttpStatus(_stderrText), limited)
       e.fetching = false
       // A rate-limited entry retries as soon as the backoff allows.
       e.nextDue = limited ? _backoffUntil : Date.now() + (e.intervalMs || 30000)

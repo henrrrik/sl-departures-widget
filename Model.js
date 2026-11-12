@@ -247,6 +247,35 @@ function waitLabel(minutes) {
   return minutes + " min"
 }
 
+// --------------------------------------------------------------- HTTP
+
+// Retry-After is honored up to this; past it the header is more likely
+// garbage than a real hour-long ban.
+var RETRY_AFTER_CAP_MS = 3600000
+
+// Every SL call (SlHub's departures fetch, bin/sl-sites --status) writes
+// "SLHTTP <code> <retry-after>" to stderr through curl --write-out. Returns
+// { code, retryAfterMs }: code 0 when SL never answered (network down,
+// timeout) or the line is missing; retryAfterMs 0 when there is none.
+function parseHttpStatus(stderrText, now) {
+  var m = String(stderrText || "").match(/^SLHTTP (\d{3}) ?(.*)$/m)
+  if (!m) return { code: 0, retryAfterMs: 0 }
+  return { code: parseInt(m[1], 10), retryAfterMs: parseRetryAfter(m[2], now) }
+}
+
+// Retry-After is either delay-seconds or an HTTP date.
+function parseRetryAfter(value, now) {
+  var text = trim(value)
+  if (text === "") return 0
+  var ms = /^\d+$/.test(text) ? parseInt(text, 10) * 1000 : Date.parse(text) - now
+  return isFinite(ms) && ms > 0 ? Math.min(ms, RETRY_AFTER_CAP_MS) : 0
+}
+
+// The status line is bookkeeping, not an error to show anyone.
+function stripHttpStatus(stderrText) {
+  return trim(String(stderrText || "").replace(/^SLHTTP .*$/mg, ""))
+}
+
 // ------------------------------------------------------------- departures
 
 function parseDepartures(raw) {

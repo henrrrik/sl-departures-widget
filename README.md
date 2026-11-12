@@ -194,11 +194,12 @@ Check the manifest against Omarchy's schema before pushing:
 omarchy plugin validate "$PWD"
 ```
 
-`Model.js` is deliberately free of QML types so it can be exercised directly:
+`Model.js` is deliberately free of QML types so it can be exercised directly,
+and `bin/sl-sites` runs against a fake curl, so neither suite touches SL:
 
 ```bash
-sed '1d' Model.js > /tmp/model.js   # drop the .pragma line
-node -e 'const M = require("/tmp/model.js"); ...'
+node --test test/
+bash test/sl-sites-test.sh
 ```
 
 ## License
