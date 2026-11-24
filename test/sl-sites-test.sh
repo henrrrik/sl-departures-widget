@@ -41,9 +41,16 @@ check() {
 
 # A cold download succeeds and says so. It used to exit 1: the RETURN trap
 # that cleaned up the temp file fired again after ensure_cache returned.
+out=$(sl_sites --read-cache 2>&1) && code=0 || code=$?
+check "a cold --read-cache exits 2" "$code" 2
+
 out=$(sl_sites --ensure-cache 2>&1) && code=0 || code=$?
 check "a cold --ensure-cache exits 0" "$code" 0
 check "a cold --ensure-cache reports the download" "$out" fetched
+
+out=$(sl_sites --read-cache 2>&1) && code=0 || code=$?
+check "a warm --read-cache exits 0" "$code" 0
+check "a warm --read-cache prints the cached list" "$(grep -c 'Slussen' <<<"$out")" 1
 
 out=$(sl_sites --ensure-cache 2>&1) && code=0 || code=$?
 check "a fresh cache is left alone" "$code:$out" "0:"

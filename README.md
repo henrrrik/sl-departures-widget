@@ -3,7 +3,7 @@
 Live departure times for a Stockholm public transport stop, in the Omarchy bar.
 
 ```
- 18 3′ · 19 7′
+ 18 3m · 19 7m
 ```
 
 Click it and you get the full board: line, destination, berth, minutes left,
@@ -58,11 +58,10 @@ cache at `~/.cache/omarchy/sl-sites.json`, which is safe to delete.
 
 ### Dependencies
 
-Everything the widget needs ships with a stock Omarchy install: `curl`,
-`bash`, and `python3` at runtime (python performs the descriptor-validated,
-size-bounded read of the stop-list cache), and `rsync` (with a plain-`cp`
-fallback) for the local `./install` script. There are no QML dependencies
-beyond the Omarchy shell itself.
+Everything the widget needs ships with a stock Omarchy install: `curl` and
+`bash` at runtime, `python3` for the `bin/sl-sites` terminal helper, and
+`rsync` (with a plain-`cp` fallback) for the local `./install` script. There
+are no QML dependencies beyond the Omarchy shell itself.
 
 ## Using it
 
@@ -82,8 +81,7 @@ rather than blanking it. If SL answers with a rate limit (HTTP 429), the widget
 stops fetching for a minute, doubling the pause on each further 429 up to ten
 minutes, or longer when SL's `Retry-After` header asks for it. Every board shows
 the pause and when it will retry, and the stop list is not downloaded during it.
-Once the pause ends, stops are fetched one at a time until SL answers without a
-429, then polling resumes as normal.
+Once the pause ends, polling resumes as normal.
 
 ## Configuration
 
@@ -119,7 +117,7 @@ Settings live inline on the widget's entry in `~/.config/omarchy/shell.json`:
 | `panelCount` | `12` | Departures shown in the popup. |
 | `forecastMinutes` | `90` | How far ahead to ask for. |
 | `refreshIntervalSec` | `30` | Seconds between fetches (minimum 15). |
-| `barFormat` | `{line} {wait}` | Template per departure. Tokens: `{line}` `{wait}` (`4′` / `now`) `{min}` (bare number) `{clock}` `{display}` (SL's own text, frozen at fetch time) `{destination}` `{icon}`. |
+| `barFormat` | `{line} {wait}` | Template per departure. Tokens: `{line}` `{wait}` (`4m` / `now`) `{min}` (bare number) `{clock}` `{display}` (SL's own text, frozen at fetch time) `{destination}` `{icon}`. |
 | `showIcon` | `true` | Mode icon in front of the bar label. |
 
 The widget allows multiple instances, so a second entry with a different

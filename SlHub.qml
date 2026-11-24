@@ -29,27 +29,14 @@ Item {
   // hub-wide: while it runs, no stop fetches and the site list is not
   // downloaded. Each consecutive 429 doubles the wait up to the cap, and a
   // Retry-After from SL lengthens it when it asks for more. Any answer from
-  // SL that is not a 429 clears it. Between the backoff lapsing and that
-  // answer the hub is "recovering" (_backoffMs > 0) and fetches one stop at
-  // a time, so a pile of overdue stops does not burst into a quota still
-  // near its limit.
+  // SL that is not a 429 clears it.
   readonly property int _backoffFloorMs: 60000
   readonly property int _backoffCapMs: 600000
   property int _backoffMs: 0
-  // The wait actually set for the current backoff: _backoffMs, or longer
-  // when Retry-After asked for more.
-  property int _backoffWaitMs: 0
   property real _backoffUntil: 0
 
-  // The deadline is wall-clock time, so a clock stepped backwards (an NTP
-  // correction, a manual change) would stretch it by the size of the step.
-  // What is left can never legitimately exceed the wait that was set, so a
-  // longer remainder is clamped back to it.
   function _backingOff() {
-    var remaining = _backoffUntil - Date.now()
-    if (remaining <= 0) return false
-    if (remaining > _backoffWaitMs) _backoffUntil = Date.now() + _backoffWaitMs
-    return true
+    return Date.now() < _backoffUntil
   }
 
   // Every SL call writes its HTTP status and any Retry-After to stderr
@@ -70,8 +57,8 @@ Item {
     // carry no news about the quota either way.
     if (_backoffMs > 0 && now - _backoffUntil > _backoffCapMs) _backoffMs = 0
     _backoffMs = _backoffMs > 0 ? Math.min(_backoffMs * 2, _backoffCapMs) : _backoffFloorMs
-    _backoffWaitMs = Math.max(_backoffMs, status ? status.retryAfterMs : 0)
-    _backoffUntil = now + _backoffWaitMs
+    var wait = Math.max(_backoffMs, status ? status.retryAfterMs : 0)
+    _backoffUntil = now + wait
     // Anything queued behind the 429 would only draw another; the scheduler
     // re-requests it once the backoff lapses.
     for (var i = 0; i < _queue.length; i++) {
@@ -88,7 +75,6 @@ Item {
   function _noteAnswered(status) {
     if (status.code > 0 && status.code !== 429 && !_backingOff()) {
       _backoffMs = 0
-      _backoffWaitMs = 0
       _backoffUntil = 0
     }
   }
@@ -192,9 +178,6 @@ Item {
       updated(url)
       return
     }
-    // Recovering: one fetch in flight at a time until a success clears the
-    // backoff. Refused requests are picked up by the scheduler's next tick.
-    if (_backoffMs > 0 && (_activeUrl !== "" || _queue.length > 0)) return
     e.queued = true
     _queue.push(url)
     pump()
@@ -224,14 +207,8 @@ Item {
     _stdoutText = null
     _stderrText = null
     _exitCode = null
-    // The response is capped in transit: --max-filesize aborts early when the
-    // server declares a size, and the head pipe hard-bounds what can reach
-    // this process when it does not. pipefail makes a truncated (i.e. above
-    // cap) transfer a failed fetch rather than a silently clipped payload.
-    fetchProcess.command = ["bash", "-c",
-      "set -o pipefail; curl -fsS --max-time 10 --max-filesize 4194304"
-        + " -w '%{stderr}SLHTTP %{http_code} %header{retry-after}\\n' -- \"$1\" | head -c 4194304",
-      "bash", url]
+    fetchProcess.command = ["curl", "-fsS", "--max-time", "10", "--max-filesize", "4194304",
+      "-w", "%{stderr}SLHTTP %{http_code} %header{retry-after}\\n", "--", url]
     fetchProcess.running = true
     watchdog.restart()
     fetchingChanged(url)
@@ -242,20 +219,26 @@ Item {
   // payload is applied only once the exit code AND both streams are in.
   // Acting on exit alone can read an empty stdout from a successful fetch.
   function maybeFinish() {
-    if (_exitCode === null || _stdoutText === null || _stderrText === null) return
+    if (_activeUrl === "" || _exitCode === null || _stdoutText === null || _stderrText === null) return
     watchdog.stop()
     var url = _activeUrl
-    var e = _entries[url]
+    var exitCode = _exitCode
+    var stdoutText = _stdoutText
+    var stderrText = _stderrText
     _activeUrl = ""
+    _exitCode = null
+    _stdoutText = null
+    _stderrText = null
+    var e = _entries[url]
     // Checked before the entry lookup: a 429 for a URL that was unsubscribed
     // mid-fetch still counts against the caller's quota, and must start the
     // backoff before the next stop's fetch goes out.
-    var status = _httpStatus(_stderrText)
+    var status = _httpStatus(stderrText)
     var limited = _isRateLimited(status)
     if (limited) _noteRateLimit(status)
     else _noteAnswered(status)
     if (e) {
-      applyResult(e, _exitCode, _stdoutText, Model.stripHttpStatus(_stderrText), limited)
+      applyResult(e, exitCode, stdoutText, Model.stripHttpStatus(stderrText), limited)
       e.fetching = false
       // A rate-limited entry retries as soon as the backoff allows.
       e.nextDue = limited ? _backoffUntil : Date.now() + (e.intervalMs || 30000)
@@ -362,10 +345,6 @@ Item {
       for (var url in hub._entries) {
         var e = hub._entries[url]
         anyLive = true
-        // nextDue is wall-clock too: after the clock steps backwards, a due
-        // time further out than one interval (or one backoff) is the step,
-        // not a schedule, and would stall the stop by its size.
-        if (e.nextDue - now > Math.max(e.intervalMs || 30000, hub._backoffWaitMs)) e.nextDue = now
         if (!blocked && !e.fetching && !e.queued && now >= e.nextDue) hub.requestNow(url)
       }
       if (!anyLive) scheduler.running = false
@@ -382,12 +361,11 @@ Item {
   property bool sitesLoading: false
   property string sitesError: ""
   property bool _sitesRetried: false
-  property string _siteCacheText: ""
+  property var _siteReadExit: null
+  property var _siteReadStdout: null
 
-  // The cache download and the hardened cache read (O_NOFOLLOW, fstat, size
-  // cap) live in bin/sl-sites, which ships alongside this file; the widget
-  // and the CLI govern the shared cache with one audited protocol instead of
-  // two hand-synced copies.
+  // The cache download and path live in bin/sl-sites, which ships alongside
+  // this file so the widget and the CLI share one cache protocol.
   readonly property string _slSitesBin: {
     var url = Qt.resolvedUrl("bin/sl-sites").toString()
     return url.indexOf("file://") === 0 ? decodeURIComponent(url.substring(7)) : url
@@ -403,9 +381,11 @@ Item {
     readSiteCache()
   }
 
-  // Exit codes: 2 = missing (the normal cold start), 3 = refused (symlink,
-  // not regular, or too large).
+  // Exit code 2 = missing (the normal cold start).
   function readSiteCache() {
+    if (siteReadProcess.running) return
+    _siteReadExit = null
+    _siteReadStdout = null
     siteReadProcess.command = ["bash", _slSitesBin, "--read-cache"]
     siteReadProcess.running = true
   }
@@ -488,43 +468,45 @@ Item {
     onExited: function(exitCode) { hub._siteCacheExit = exitCode; hub._siteCacheFinish() }
   }
 
+  // Same exit/stream ordering barrier as fetchProcess and siteCacheProcess:
+  // the 1.3 MB site list can still be draining stdout when onExited fires.
+  function _siteReadFinish() {
+    if (_siteReadExit === null || _siteReadStdout === null) return
+    var exitCode = _siteReadExit
+    var text = _siteReadStdout
+    _siteReadExit = null
+    _siteReadStdout = null
+    // A re-read after the background refresh: the list in memory is good,
+    // so a failed or empty re-read keeps it rather than blanking the picker.
+    var refreshing = sites.length > 0
+    if (exitCode === 0) {
+      var parsed = Model.parseSites(text)
+      if (parsed.length > 0 || !refreshing) sites = parsed
+      sitesError = sites.length > 0 ? "" : "The SL stop list came back empty"
+      sitesLoading = false
+      sitesReady()
+      if (!_siteRefreshChecked) ensureSiteCache(true)
+      return
+    }
+    if (refreshing) return
+    // A miss on the first read is the normal cold-start path: the cache has
+    // not been downloaded yet. Ask for it once and stop, so a download that
+    // keeps producing an unreadable file cannot spin.
+    if (exitCode === 2 && !_sitesRetried) {
+      _sitesRetried = true
+      ensureSiteCache(false)
+      return
+    }
+    sitesLoading = false
+    sitesError = "Could not read the SL stop list cache"
+  }
+
   Process {
     id: siteReadProcess
     stdout: StdioCollector {
       waitForEnd: true
-      onStreamFinished: hub._siteCacheText = String(text || "")
+      onStreamFinished: { hub._siteReadStdout = String(text || ""); hub._siteReadFinish() }
     }
-    onExited: function(exitCode) {
-      // A re-read after the background refresh: the list in memory is good,
-      // so a failed or empty re-read keeps it rather than blanking the picker.
-      var refreshing = hub.sites.length > 0
-      if (exitCode === 0) {
-        var parsed = Model.parseSites(hub._siteCacheText)
-        hub._siteCacheText = ""
-        if (parsed.length > 0 || !refreshing) hub.sites = parsed
-        hub.sitesError = hub.sites.length > 0 ? "" : "The SL stop list came back empty"
-        hub.sitesLoading = false
-        hub.sitesReady()
-        if (!hub._siteRefreshChecked) {
-          hub._siteRefreshChecked = true
-          hub.ensureSiteCache(true)
-        }
-        return
-      }
-      hub._siteCacheText = ""
-      if (refreshing) return
-      // A miss on the first read is the normal cold-start path: the cache has
-      // not been downloaded yet. Ask for it once and stop, so a download that
-      // keeps producing an unreadable file cannot spin.
-      if (exitCode === 2 && !hub._sitesRetried) {
-        hub._sitesRetried = true
-        hub.ensureSiteCache(false)
-        return
-      }
-      hub.sitesLoading = false
-      hub.sitesError = exitCode === 3
-        ? "Refusing the SL stop list cache (not a regular file, or too large)"
-        : "Could not read the SL stop list cache"
-    }
+    onExited: function(exitCode) { hub._siteReadExit = exitCode; hub._siteReadFinish() }
   }
 }

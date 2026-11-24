@@ -8,7 +8,7 @@
 # The stop list is cached in ~/.cache/omarchy/sl-sites.json and shared with
 # the widget. The widget drives the cache through this same script (the
 # --ensure-cache and --read-cache maintenance flags below), so the download
-# and the hardened read exist exactly once for both consumers.
+# and cache path exist once for both consumers.
 
 set -euo pipefail
 
@@ -45,15 +45,16 @@ EOF
   exit "${1:-0}"
 }
 
-# One loop rather than one line per tool: a line pairing the word "curl" with
-# an output redirect reads as a download to marketplace security scanners.
-for dependency in curl python3; do
-  command -v "$dependency" >/dev/null || die "sl-sites needs $dependency"
-done
+need() {
+  for dependency in "$@"; do
+    command -v "$dependency" >/dev/null || die "sl-sites needs $dependency"
+  done
+}
 
 # Staged through mktemp (private, unpredictable) rather than a fixed .tmp
 # path, size-capped, and published with an atomic rename.
 fetch_sites() {
+  need curl
   local dir tmp
   dir=$(dirname -- "$CACHE")
   mkdir -p "$dir"
@@ -73,38 +74,16 @@ ensure_cache() {
   fi
 }
 
-# Reads the cache to stdout through one file descriptor: O_NOFOLLOW refuses
-# symlinks, fstat on that same descriptor confirms a regular file under the
-# size cap, and the read itself is bounded by the cap — nothing between check
-# and read can swap the file out, and an oversized or planted cache never
-# reaches a consumer. Exit codes: 2 = missing (the normal cold start),
-# 3 = refused (symlink, not regular, or too large). The widget calls this via
-# --read-cache; search() below goes through it too.
+# Exit code 2 = missing (the normal cold start).
 read_cache() {
-  python3 -c '
-import os, stat, sys
-cap = 8 * 1024 * 1024
-try:
-    fd = os.open(sys.argv[1], os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
-except FileNotFoundError:
-    sys.exit(2)
-except OSError:
-    sys.exit(3)
-st = os.fstat(fd)
-if not stat.S_ISREG(st.st_mode) or st.st_size > cap:
-    os.close(fd)
-    sys.exit(3)
-with os.fdopen(fd, "rb") as fh:
-    sys.stdout.buffer.write(fh.read(cap))
-' "$CACHE"
+  [[ -f $CACHE ]] || exit 2
+  cat -- "$CACHE"
 }
 
 search() {
+  need python3
   ensure_cache >/dev/null
-  local data
-  data=$(mktemp)
-  TEMP_FILES+=("$data")
-  read_cache > "$data" || die "refusing the stop list cache (missing, not a regular file, or too large)"
+  [[ -f $CACHE ]] || die "stop list cache is missing — try --refresh"
   # The guards mirror Model.js parseSites: the cache is shared and writable by
   # both consumers, so a payload of the wrong shape gets a message, not a
   # traceback.
@@ -149,10 +128,11 @@ if not hits:
 
 for _, _, name, note, sid in sorted(hits)[:40]:
     print("%-8d %s%s" % (sid, name, "  (%s)" % note if note else ""))
-' "$1" < "$data"
+' "$1" < "$CACHE"
 }
 
 departures() {
+  need curl python3
   local site=$1 transport=${2:-}
   local url="$API/sites/$site/departures?forecast=90"
   [[ -n $transport ]] && url="$url&transport=${transport^^}"

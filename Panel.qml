@@ -258,7 +258,10 @@ Panel {
     cursorActive = false
     rowIndex = 0
     panelFlick.contentY = 0
-    service.refresh()
+    // Avoid spending quota when toggling the popup right after a fresh fetch;
+    // explicit refreshes (r / right-click) still go straight through.
+    if (service.lastUpdated <= 0 || service.lastError !== "" || Date.now() - service.lastUpdated >= 10000)
+      service.refresh()
     // A stop has to be chosen before there is anything to show, so an
     // unconfigured widget opens straight into the picker.
     if (config.siteId <= 0) startPicking()

@@ -229,8 +229,8 @@ function clockText(departure) {
 // than "0" — the number is the wait, and there isn't one.
 //
 // Three renderings, because the unit belongs in a different place in each:
-// bare for user templates that supply their own unit, primed for the bar
-// where width is scarce, and spelled out for the popup rows.
+// bare for user templates that supply their own unit, compact ("4m") for the
+// bar where width is scarce, and spelled out for the popup rows.
 function minutesText(minutes) {
   if (minutes === null || minutes === undefined) return "?"
   return minutes <= 0 ? "now" : String(minutes)
@@ -238,7 +238,7 @@ function minutesText(minutes) {
 
 function waitText(minutes) {
   if (minutes === null || minutes === undefined) return "?"
-  return minutes <= 0 ? "now" : minutes + "′"
+  return minutes <= 0 ? "now" : minutes + "m"
 }
 
 function waitLabel(minutes) {

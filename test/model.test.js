@@ -25,6 +25,8 @@ test("minutes are floored, as SL counts them", () => {
   assert.equal(M.departureMinutes({ expected: "2026-11-12T10:00:40" }, NOW), 0)
   assert.equal(M.departureMinutes({ expected: "2026-11-12T10:04:40" }, NOW), 4)
   assert.equal(M.toRows([{ expected: "2026-11-12T10:00:40" }], NOW)[0].minutesText, "now")
+  assert.equal(M.waitText(0), "now")
+  assert.equal(M.waitText(4), "4m")
 })
 
 test("a stale board drops departures more than a minute gone", () => {
